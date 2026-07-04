@@ -23,6 +23,9 @@ type LastOrder = {
   discountAmount?: number;
   total: number;
   status: string;
+  paymentStatus?: string;
+  paymentReference?: string;
+  createdAt?: string;
   items?: OrderItem[];
   coupon?: {
     code: string;
@@ -32,13 +35,18 @@ type LastOrder = {
   customer: {
     fullName: string;
     phone: string;
+    email?: string;
     address: string;
+    landmark?: string;
+    pincode?: string;
+    deliveryDate?: string;
     deliverySlot: string;
     deliverySlotDetails?: {
       id?: string;
       label?: string;
     } | null;
     paymentMethod: string;
+    notes?: string;
   };
 };
 
@@ -48,6 +56,19 @@ const getOrderDeliverySlot = (order: LastOrder) => {
     order.customer?.deliverySlot ||
     "Not selected"
   );
+};
+
+const getOrderPaymentStatus = (order: LastOrder) => {
+  if (order.paymentStatus) return order.paymentStatus;
+
+  if (
+    order.customer.paymentMethod === "UPI QR Payment" ||
+    order.customer.paymentMethod === "Bank Transfer"
+  ) {
+    return "Verification Pending";
+  }
+
+  return "Payment Pending";
 };
 
 const isCustomKitItem = (item: OrderItem) => {
@@ -69,14 +90,26 @@ const getCustomKitItems = (item: OrderItem) => {
     .filter(Boolean);
 };
 
+const getSafeImage = (image?: string) => {
+  if (image && image.trim().length > 0) return image;
+  return "/premium-pooja-pack.jpg";
+};
+
 export default function OrderSuccessPage() {
   const [order, setOrder] = useState<LastOrder | null>(null);
 
   useEffect(() => {
     const savedOrder = localStorage.getItem("pujafresh-last-order");
 
-    if (savedOrder) {
-      setOrder(JSON.parse(savedOrder));
+    if (!savedOrder) {
+      setOrder(null);
+      return;
+    }
+
+    try {
+      setOrder(JSON.parse(savedOrder) as LastOrder);
+    } catch {
+      setOrder(null);
     }
   }, []);
 
@@ -84,7 +117,7 @@ export default function OrderSuccessPage() {
     <main className="min-h-screen bg-[#f7f3ea]">
       <Navbar />
 
-      <section className="mx-auto max-w-3xl px-4 py-10">
+      <section className="mx-auto max-w-4xl px-4 py-10">
         <div className="rounded-xl bg-white p-8 text-center shadow-sm">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-3xl">
             ✅
@@ -99,7 +132,14 @@ export default function OrderSuccessPage() {
             delivered in your selected morning slot.
           </p>
 
-          {order && (
+          {!order ? (
+            <div className="mt-6 rounded-lg bg-[#fff7ed] p-5">
+              <p className="font-bold text-gray-900">No recent order found</p>
+              <p className="mt-1 text-sm text-gray-600">
+                Place a new order or check your order history.
+              </p>
+            </div>
+          ) : (
             <div className="mt-6 rounded-lg bg-[#fff7ed] p-5 text-left">
               <p className="text-sm text-gray-600">Order ID</p>
               <p className="font-bold text-[#7a1e13]">{order.id}</p>
@@ -114,6 +154,15 @@ export default function OrderSuccessPage() {
                   <p className="text-gray-500">Phone</p>
                   <p className="font-semibold">{order.customer.phone}</p>
                 </div>
+
+                {order.customer.deliveryDate && (
+                  <div>
+                    <p className="text-gray-500">Delivery Date</p>
+                    <p className="font-semibold">
+                      {order.customer.deliveryDate}
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <p className="text-gray-500">Delivery Slot</p>
@@ -130,21 +179,34 @@ export default function OrderSuccessPage() {
                 </div>
 
                 <div>
+                  <p className="text-gray-500">Payment Status</p>
+                  <p className="font-semibold text-blue-700">
+                    {getOrderPaymentStatus(order)}
+                  </p>
+                </div>
+
+                <div>
                   <p className="text-gray-500">Status</p>
                   <p className="font-semibold text-[#15803d]">
                     {order.status}
                   </p>
                 </div>
-
-                {order.coupon && (
-                  <div>
-                    <p className="text-gray-500">Coupon Applied</p>
-                    <p className="font-semibold text-[#15803d]">
-                      {order.coupon.code} - ₹{order.coupon.discountAmount} off
-                    </p>
-                  </div>
-                )}
               </div>
+
+              {order.customer.address && (
+                <div className="mt-5 rounded-lg bg-white p-4">
+                  <h2 className="font-bold text-gray-900">Delivery Address</h2>
+                  <p className="mt-2 text-sm text-gray-700">
+                    {order.customer.address}
+                    {order.customer.landmark
+                      ? `, Landmark: ${order.customer.landmark}`
+                      : ""}
+                    {order.customer.pincode
+                      ? `, Pincode: ${order.customer.pincode}`
+                      : ""}
+                  </p>
+                </div>
+              )}
 
               {order.items && order.items.length > 0 && (
                 <div className="mt-5 rounded-lg bg-white p-4">
@@ -160,49 +222,57 @@ export default function OrderSuccessPage() {
                           key={`${item.id || item.name}-${index}`}
                           className="rounded-lg border border-gray-100 bg-gray-50 p-3"
                         >
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="font-bold text-gray-900">
-                                  {item.name}
-                                </h3>
-
-                                {customKit && (
-                                  <span className="rounded-full bg-[#fff7ed] px-2 py-1 text-[11px] font-black uppercase text-[#7a1e13]">
-                                    Custom Kit
-                                  </span>
-                                )}
-                              </div>
-
-                              <p className="mt-1 text-xs font-semibold text-gray-500">
-                                {item.category || "Pooja Essential"} • Qty:{" "}
-                                {item.quantity}
-                              </p>
+                          <div className="flex gap-3">
+                            <div className="h-16 w-16 overflow-hidden rounded bg-[#fff7ed]">
+                              <img
+                                src={getSafeImage(item.image)}
+                                alt={item.name}
+                                className="h-full w-full object-contain p-1"
+                                onError={(event) => {
+                                  event.currentTarget.src =
+                                    "/premium-pooja-pack.jpg";
+                                }}
+                              />
                             </div>
 
-                            <p className="font-black text-[#7a1e13]">
-                              ₹{item.price * item.quantity}
-                            </p>
+                            <div className="flex-1">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <h3 className="font-bold text-gray-900">
+                                    {item.name}
+                                  </h3>
+
+                                  <p className="mt-1 text-xs font-semibold text-gray-500">
+                                    {item.category || "Pooja Essential"} • Qty:{" "}
+                                    {item.quantity}
+                                  </p>
+                                </div>
+
+                                <p className="font-black text-[#7a1e13]">
+                                  ₹{item.price * item.quantity}
+                                </p>
+                              </div>
+
+                              {customKit && customKitItems.length > 0 && (
+                                <div className="mt-3 rounded bg-[#fff7ed] p-3">
+                                  <p className="text-xs font-black uppercase tracking-wide text-[#7a1e13]">
+                                    Kit includes
+                                  </p>
+
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {customKitItems.map((kitItem) => (
+                                      <span
+                                        key={kitItem}
+                                        className="rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-700 shadow-sm"
+                                      >
+                                        {kitItem}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           </div>
-
-                          {customKit && customKitItems.length > 0 && (
-                            <div className="mt-3 rounded bg-[#fff7ed] p-3">
-                              <p className="text-xs font-black uppercase tracking-wide text-[#7a1e13]">
-                                Kit includes
-                              </p>
-
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {customKitItems.map((kitItem) => (
-                                  <span
-                                    key={kitItem}
-                                    className="rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-700 shadow-sm"
-                                  >
-                                    {kitItem}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       );
                     })}
@@ -258,6 +328,15 @@ export default function OrderSuccessPage() {
             >
               View Orders
             </Link>
+
+            {order && (
+              <Link
+                href={`/track-order?orderId=${encodeURIComponent(order.id)}`}
+                className="rounded border border-blue-700 px-6 py-3 font-bold text-blue-700"
+              >
+                Track Order
+              </Link>
+            )}
 
             {order && (
               <Link

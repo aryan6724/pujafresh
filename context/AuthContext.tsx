@@ -1,82 +1,111 @@
 "use client";
 
-import { createContext, ReactNode, useContext, useEffect, useState } from "react";
+import { createContext, ReactNode, useContext } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
+
+type UserRole = "CUSTOMER" | "ADMIN" | "MANAGER" | "DELIVERY_PARTNER";
 
 type User = {
+  id?: string;
   fullName: string;
+  name?: string | null;
   email: string;
-  phone: string;
-  password: string;
+  phone?: string | null;
+  password?: string;
+  role?: UserRole;
+};
+
+type AuthResult = {
+  success: boolean;
+  message: string;
 };
 
 type AuthContextType = {
   user: User | null;
   isLoggedIn: boolean;
-  register: (userData: User) => { success: boolean; message: string };
-  login: (email: string, password: string) => { success: boolean; message: string };
-  logout: () => void;
+  isLoading: boolean;
+  register: (userData: User) => Promise<AuthResult>;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const { data: session, status } = useSession();
 
-  useEffect(() => {
-    const savedUser = localStorage.getItem("pujafresh-current-user");
+  const sessionUser = session?.user as
+    | {
+        id?: string;
+        name?: string | null;
+        fullName?: string | null;
+        email?: string | null;
+        phone?: string | null;
+        role?: UserRole;
+      }
+    | undefined;
 
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-  }, []);
+  const user: User | null = sessionUser
+    ? {
+        id: sessionUser.id,
+        fullName:
+          sessionUser.fullName ||
+          sessionUser.name ||
+          sessionUser.email?.split("@")[0] ||
+          "User",
+        name: sessionUser.name,
+        email: sessionUser.email || "",
+        phone: sessionUser.phone || "",
+        role: sessionUser.role || "CUSTOMER",
+      }
+    : null;
 
-  const register = (userData: User) => {
-    const savedUsers = JSON.parse(
-      localStorage.getItem("pujafresh-users") || "[]"
-    ) as User[];
+  const register = async (userData: User): Promise<AuthResult> => {
+    const response = await fetch("/api/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fullName: userData.fullName,
+        email: userData.email,
+        phone: userData.phone || "",
+        password: userData.password || "",
+        confirmPassword: userData.password || "",
+      }),
+    });
 
-    const alreadyExists = savedUsers.some(
-      (savedUser) => savedUser.email === userData.email
-    );
+    const data = await response.json();
 
-    if (alreadyExists) {
+    if (!response.ok) {
       return {
         success: false,
-        message: "Email already registered",
+        message: data.message || "Unable to create account",
       };
     }
 
-    const updatedUsers = [...savedUsers, userData];
-
-    localStorage.setItem("pujafresh-users", JSON.stringify(updatedUsers));
-    localStorage.setItem("pujafresh-current-user", JSON.stringify(userData));
-
-    setUser(userData);
-
     return {
       success: true,
-      message: "Account created successfully",
+      message: data.message || "Account created successfully",
     };
   };
 
-  const login = (email: string, password: string) => {
-    const savedUsers = JSON.parse(
-      localStorage.getItem("pujafresh-users") || "[]"
-    ) as User[];
+  const login = async (
+    email: string,
+    password: string
+  ): Promise<AuthResult> => {
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
 
-    const matchedUser = savedUsers.find(
-      (savedUser) => savedUser.email === email && savedUser.password === password
-    );
-
-    if (!matchedUser) {
+    if (!result || result.error || result.ok === false) {
       return {
         success: false,
         message: "Invalid email or password",
       };
     }
-
-    localStorage.setItem("pujafresh-current-user", JSON.stringify(matchedUser));
-    setUser(matchedUser);
 
     return {
       success: true,
@@ -84,9 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   };
 
-  const logout = () => {
-    localStorage.removeItem("pujafresh-current-user");
-    setUser(null);
+  const logout = async () => {
+    await signOut({ callbackUrl: "/" });
   };
 
   return (
@@ -94,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         isLoggedIn: Boolean(user),
+        isLoading: status === "loading",
         register,
         login,
         logout,

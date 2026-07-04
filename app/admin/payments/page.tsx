@@ -51,6 +51,7 @@ type Order = {
 };
 
 const ORDERS_STORAGE_KEY = "pujafresh-orders";
+const LAST_ORDER_STORAGE_KEY = "pujafresh-last-order";
 
 const paymentStatuses = [
   "Payment Pending",
@@ -108,15 +109,47 @@ const getPaymentMethod = (order: Order) => {
   return order.customer?.paymentMethod || "N/A";
 };
 
+const getDefaultPaymentStatus = (order: Order) => {
+  if (order.paymentStatus) return order.paymentStatus;
+
+  const paymentMethod = getPaymentMethod(order);
+
+  if (paymentMethod === "UPI QR Payment" || paymentMethod === "Bank Transfer") {
+    return "Verification Pending";
+  }
+
+  return "Payment Pending";
+};
+
 const readOrders = () => {
   try {
     const savedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
+    const lastOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
 
-    if (!savedOrders) return [];
+    const parsedOrders = savedOrders
+      ? (JSON.parse(savedOrders) as Order[])
+      : [];
 
-    const parsedOrders = JSON.parse(savedOrders) as Order[];
+    const orders = Array.isArray(parsedOrders) ? parsedOrders : [];
 
-    return Array.isArray(parsedOrders) ? parsedOrders : [];
+    const normalizedOrders = orders.map((order) => ({
+      ...order,
+      paymentStatus: getDefaultPaymentStatus(order),
+    }));
+
+    if (!lastOrder) return normalizedOrders;
+
+    const parsedLastOrder = {
+      ...(JSON.parse(lastOrder) as Order),
+    };
+
+    parsedLastOrder.paymentStatus = getDefaultPaymentStatus(parsedLastOrder);
+
+    const existsInOrders = normalizedOrders.some(
+      (order) => order.id === parsedLastOrder.id
+    );
+
+    return existsInOrders ? normalizedOrders : [parsedLastOrder, ...normalizedOrders];
   } catch {
     return [];
   }
@@ -124,6 +157,26 @@ const readOrders = () => {
 
 const saveOrders = (orders: Order[]) => {
   localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+
+  const lastOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
+
+  if (!lastOrder) return;
+
+  try {
+    const parsedLastOrder = JSON.parse(lastOrder) as Order;
+    const updatedLastOrder = orders.find(
+      (order) => order.id === parsedLastOrder.id
+    );
+
+    if (updatedLastOrder) {
+      localStorage.setItem(
+        LAST_ORDER_STORAGE_KEY,
+        JSON.stringify(updatedLastOrder)
+      );
+    }
+  } catch {
+    // Ignore invalid last order data.
+  }
 };
 
 const getPaymentBadgeClass = (paymentStatus?: string) => {

@@ -26,8 +26,20 @@ const notificationTypeFilters = [
   "System",
 ];
 
+const normalizeEmail = (email?: string) => {
+  return email?.trim().toLowerCase() || "";
+};
+
+const normalizePhone = (phone?: string) => {
+  return phone?.replace(/\D/g, "") || "";
+};
+
 const formatDateTime = (date: string) => {
-  return new Date(date).toLocaleString("en-IN", {
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) return "N/A";
+
+  return parsedDate.toLocaleString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -54,8 +66,8 @@ export default function NotificationsPage() {
   const [readFilter, setReadFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const customerEmail = user?.email;
-  const customerPhone = (user as any)?.phone;
+  const customerEmail = normalizeEmail(user?.email);
+  const customerPhone = normalizePhone((user as any)?.phone);
 
   const loadNotifications = () => {
     if (!customerEmail && !customerPhone) {
@@ -286,15 +298,27 @@ export default function NotificationsPage() {
 
           <div className="mt-5 flex flex-wrap gap-2">
             <button
+              onClick={() => {
+                loadNotifications();
+                toast.success("Notifications refreshed");
+              }}
+              className="rounded border border-[#15803d] px-4 py-2 text-sm font-bold text-[#15803d] hover:bg-[#15803d] hover:text-white"
+            >
+              Refresh
+            </button>
+
+            <button
               onClick={handleMarkAllRead}
-              className="rounded bg-[#15803d] px-4 py-2 text-sm font-bold text-white hover:bg-[#166534]"
+              disabled={stats.unread === 0}
+              className="rounded bg-[#15803d] px-4 py-2 text-sm font-bold text-white hover:bg-[#166534] disabled:cursor-not-allowed disabled:bg-gray-400"
             >
               Mark All Read
             </button>
 
             <button
               onClick={handleClearRead}
-              className="rounded border border-red-600 px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-600 hover:text-white"
+              disabled={notifications.every((notification) => !notification.isRead)}
+              className="rounded border border-red-600 px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:border-gray-400 disabled:text-gray-400"
             >
               Clear Read
             </button>

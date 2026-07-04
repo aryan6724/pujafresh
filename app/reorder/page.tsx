@@ -40,6 +40,7 @@ type Order = {
 };
 
 const ORDERS_STORAGE_KEY = "pujafresh-orders";
+const LAST_ORDER_STORAGE_KEY = "pujafresh-last-order";
 
 const statusFilters = [
   "All Orders",
@@ -87,12 +88,17 @@ const formatDate = (date?: string) => {
 const readOrders = () => {
   try {
     const savedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
+    const savedLastOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
 
-    if (!savedOrders) return [];
+    const parsedOrders = savedOrders ? (JSON.parse(savedOrders) as Order[]) : [];
+    const orders = Array.isArray(parsedOrders) ? parsedOrders : [];
 
-    const parsedOrders = JSON.parse(savedOrders) as Order[];
+    if (!savedLastOrder) return orders;
 
-    return Array.isArray(parsedOrders) ? parsedOrders : [];
+    const lastOrder = JSON.parse(savedLastOrder) as Order;
+    const existsInOrders = orders.some((order) => order.id === lastOrder.id);
+
+    return existsInOrders ? orders : [lastOrder, ...orders];
   } catch {
     return [];
   }

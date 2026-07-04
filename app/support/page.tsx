@@ -56,6 +56,18 @@ const categories = [
   "Other",
 ];
 
+const normalizeEmail = (email?: string) => {
+  return email?.trim().toLowerCase() || "";
+};
+
+const normalizePhone = (phone?: string) => {
+  return phone?.replace(/\D/g, "") || "";
+};
+
+const dispatchSupportTicketsUpdated = () => {
+  window.dispatchEvent(new Event("pujafresh-support-tickets-updated"));
+};
+
 export default function SupportPage() {
   const { isLoggedIn, user } = useAuth();
 
@@ -63,20 +75,33 @@ export default function SupportPage() {
   const [formData, setFormData] = useState<TicketFormData>(emptyForm);
   const [statusFilter, setStatusFilter] = useState("All Tickets");
 
-  useEffect(() => {
+  const loadTickets = () => {
     const savedTickets = localStorage.getItem(SUPPORT_TICKETS_KEY);
 
-    if (savedTickets) {
-      try {
-        const parsedTickets = JSON.parse(savedTickets) as SupportTicket[];
-
-        if (Array.isArray(parsedTickets)) {
-          setTickets(parsedTickets);
-        }
-      } catch {
-        setTickets([]);
-      }
+    if (!savedTickets) {
+      setTickets([]);
+      return;
     }
+
+    try {
+      const parsedTickets = JSON.parse(savedTickets) as SupportTicket[];
+
+      setTickets(Array.isArray(parsedTickets) ? parsedTickets : []);
+    } catch {
+      setTickets([]);
+    }
+  };
+
+  useEffect(() => {
+    loadTickets();
+
+    window.addEventListener("storage", loadTickets);
+    window.addEventListener("pujafresh-support-tickets-updated", loadTickets);
+
+    return () => {
+      window.removeEventListener("storage", loadTickets);
+      window.removeEventListener("pujafresh-support-tickets-updated", loadTickets);
+    };
   }, []);
 
   useEffect(() => {
@@ -86,18 +111,26 @@ export default function SupportPage() {
       ...prev,
       customerName: prev.customerName || user.fullName || "",
       customerEmail: prev.customerEmail || user.email || "",
+      customerPhone: prev.customerPhone || String((user as any)?.phone || ""),
     }));
   }, [isLoggedIn, user]);
 
   const customerTickets = useMemo(() => {
     if (!isLoggedIn || !user) return [];
 
+    const userEmail = normalizeEmail(user.email);
+    const userPhone = normalizePhone((user as any)?.phone);
+
     return tickets
-      .filter(
-        (ticket) =>
-          ticket.customerEmail.trim().toLowerCase() ===
-          user.email.trim().toLowerCase()
-      )
+      .filter((ticket) => {
+        const ticketEmail = normalizeEmail(ticket.customerEmail);
+        const ticketPhone = normalizePhone(ticket.customerPhone);
+
+        if (userEmail && ticketEmail && userEmail === ticketEmail) return true;
+        if (userPhone && ticketPhone && userPhone === ticketPhone) return true;
+
+        return false;
+      })
       .filter(
         (ticket) =>
           statusFilter === "All Tickets" || ticket.status === statusFilter
@@ -121,6 +154,7 @@ export default function SupportPage() {
   const saveTickets = (updatedTickets: SupportTicket[]) => {
     setTickets(updatedTickets);
     localStorage.setItem(SUPPORT_TICKETS_KEY, JSON.stringify(updatedTickets));
+    dispatchSupportTicketsUpdated();
   };
 
   const handleChange = (
@@ -172,14 +206,14 @@ export default function SupportPage() {
 
     const newTicket: SupportTicket = {
       id: `SUP-${Date.now()}`,
-      customerName: formData.customerName,
-      customerEmail: formData.customerEmail,
-      customerPhone: formData.customerPhone,
+      customerName: formData.customerName.trim(),
+      customerEmail: formData.customerEmail.trim(),
+      customerPhone: formData.customerPhone.trim(),
       orderId: formData.orderId.trim(),
       category: formData.category,
       priority: formData.priority,
-      subject: formData.subject,
-      message: formData.message,
+      subject: formData.subject.trim(),
+      message: formData.message.trim(),
       status: "Open",
       createdAt: now,
       updatedAt: now,

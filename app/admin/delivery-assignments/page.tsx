@@ -51,6 +51,7 @@ type Order = {
 };
 
 const ORDERS_STORAGE_KEY = "pujafresh-orders";
+const LAST_ORDER_STORAGE_KEY = "pujafresh-last-order";
 
 const formatDateForInput = (date: Date) => {
   const year = date.getFullYear();
@@ -124,22 +125,62 @@ export default function AdminDeliveryAssignmentsPage() {
     setIsCheckingAuth(false);
   }, [router]);
 
-  const loadData = () => {
+  const readOrders = () => {
     try {
       const savedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
-      const parsedOrders = savedOrders ? (JSON.parse(savedOrders) as Order[]) : [];
+      const lastOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
 
-      setOrders(Array.isArray(parsedOrders) ? parsedOrders : []);
-      setPartners(getActiveDeliveryPartners());
+      const parsedOrders = savedOrders
+        ? (JSON.parse(savedOrders) as Order[])
+        : [];
+
+      const orders = Array.isArray(parsedOrders) ? parsedOrders : [];
+
+      if (!lastOrder) {
+        return orders;
+      }
+
+      const parsedLastOrder = JSON.parse(lastOrder) as Order;
+
+      const existsInOrders = orders.some(
+        (order) => order.id === parsedLastOrder.id
+      );
+
+      return existsInOrders ? orders : [parsedLastOrder, ...orders];
     } catch {
-      setOrders([]);
-      setPartners(getActiveDeliveryPartners());
+      return [];
     }
+  };
+
+  const loadData = () => {
+    setOrders(readOrders());
+    setPartners(getActiveDeliveryPartners());
   };
 
   const saveOrders = (updatedOrders: Order[]) => {
     setOrders(updatedOrders);
     localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(updatedOrders));
+
+    const lastOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
+
+    if (!lastOrder) return;
+
+    try {
+      const parsedLastOrder = JSON.parse(lastOrder) as Order;
+
+      const updatedLastOrder = updatedOrders.find(
+        (order) => order.id === parsedLastOrder.id
+      );
+
+      if (updatedLastOrder) {
+        localStorage.setItem(
+          LAST_ORDER_STORAGE_KEY,
+          JSON.stringify(updatedLastOrder)
+        );
+      }
+    } catch {
+      // Ignore invalid last order data.
+    }
   };
 
   const selectedDateOrders = useMemo(() => {

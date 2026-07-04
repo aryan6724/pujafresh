@@ -153,6 +153,7 @@ export default function AdminDeliveryAreasPage() {
           areaName,
           city,
           isActive: formData.isActive,
+          updatedAt: new Date().toISOString(),
         };
       });
 
@@ -162,14 +163,17 @@ export default function AdminDeliveryAreasPage() {
       return;
     }
 
-    const newArea: DeliveryArea = {
+    const now = new Date().toISOString();
+
+    const newArea = {
       id: createDeliveryAreaId(),
       pincode,
       areaName,
       city,
       isActive: formData.isActive,
-      createdAt: new Date().toISOString(),
-    };
+      createdAt: now,
+      updatedAt: now,
+    } as DeliveryArea;
 
     updateAreas([newArea, ...areas]);
     toast.success("Delivery area added");

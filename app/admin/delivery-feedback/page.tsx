@@ -1,18 +1,59 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
 import {
-  deleteDeliveryFeedback,
-  DeliveryFeedback,
-  getDeliveryFeedbacks,
+  addDeliveryFeedback,
+  createDeliveryFeedbackId,
+  DeliveryFeedbackIssue,
+  getFeedbackByOrderId,
 } from "@/utils/deliveryFeedbackStorage";
 
-const issueFilters = [
-  "All Issues",
+type AssignedPartner = {
+  id: string;
+  name: string;
+  phone: string;
+  vehicleType: string;
+  vehicleNumber: string;
+  assignedAt: string;
+};
+
+type Order = {
+  id: string;
+  total?: number;
+  status?: string;
+  paymentStatus?: string;
+  createdAt?: string;
+  deliveredAt?: string;
+  deliveryPartner?: AssignedPartner | null;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customer?: {
+    fullName?: string;
+    name?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    landmark?: string;
+    pincode?: string;
+    deliveryDate?: string;
+    deliverySlot?: string;
+  };
+  items?: {
+    name?: string;
+    quantity?: number;
+    price?: number;
+  }[];
+};
+
+const ORDERS_STORAGE_KEY = "pujafresh-orders";
+const LAST_ORDER_STORAGE_KEY = "pujafresh-last-order";
+
+const issueTypes: DeliveryFeedbackIssue[] = [
   "None",
   "Late Delivery",
   "Damaged Item",
@@ -23,9 +64,30 @@ const issueFilters = [
   "Other",
 ];
 
-const ratingFilters = ["All Ratings", "5", "4", "3", "2", "1"];
+const ratingOptions = [5, 4, 3, 2, 1];
 
-const formatDateTime = (date: string) => {
+const getCustomerName = (order: Order) => {
+  return (
+    order.customer?.fullName ||
+    order.customer?.name ||
+    order.customerName ||
+    order.customer?.email ||
+    order.customerEmail ||
+    "Customer"
+  );
+};
+
+const getCustomerPhone = (order: Order) => {
+  return order.customer?.phone || order.customerPhone || "";
+};
+
+const getCustomerEmail = (order: Order) => {
+  return order.customer?.email || order.customerEmail || "";
+};
+
+const formatDateTime = (date?: string) => {
+  if (!date) return "N/A";
+
   return new Date(date).toLocaleString("en-IN", {
     day: "2-digit",
     month: "short",
@@ -35,562 +97,553 @@ const formatDateTime = (date: string) => {
   });
 };
 
-const getAverage = (values: number[]) => {
-  if (values.length === 0) return 0;
+function DeliveryFeedbackContent() {
+  const searchParams = useSearchParams();
+  const queryOrderId = searchParams.get("orderId") || "";
 
-  return Number(
-    (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)
-  );
-};
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [orderIdInput, setOrderIdInput] = useState("");
+  const [phoneInput, setPhoneInput] = useState("");
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [existingFeedbackFound, setExistingFeedbackFound] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
-export default function AdminDeliveryFeedbackPage() {
-  const router = useRouter();
-
-  const [feedbacks, setFeedbacks] = useState<DeliveryFeedback[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [issueFilter, setIssueFilter] = useState("All Issues");
-  const [ratingFilter, setRatingFilter] = useState("All Ratings");
-  const [recommendFilter, setRecommendFilter] = useState("All");
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [orderRating, setOrderRating] = useState(5);
+  const [deliveryRating, setDeliveryRating] = useState(5);
+  const [packagingRating, setPackagingRating] = useState(5);
+  const [issueType, setIssueType] = useState<DeliveryFeedbackIssue>("None");
+  const [comment, setComment] = useState("");
+  const [wouldRecommend, setWouldRecommend] = useState(true);
 
   useEffect(() => {
-    const isAdminLoggedIn = localStorage.getItem("pujafresh-admin-auth");
+    const loadedOrders = loadOrders();
 
-    if (isAdminLoggedIn !== "true") {
-      router.push("/admin/login");
+    if (!queryOrderId) return;
+
+    const foundOrder = loadedOrders.find(
+      (order) => order.id.toLowerCase() === queryOrderId.toLowerCase()
+    );
+
+    setOrderIdInput(queryOrderId);
+
+    if (!foundOrder) {
+      setSelectedOrder(null);
+      setExistingFeedbackFound(false);
+      setHasSearched(true);
       return;
     }
 
-    loadFeedbacks();
-    setIsCheckingAuth(false);
-  }, [router]);
-
-  const loadFeedbacks = () => {
-    setFeedbacks(getDeliveryFeedbacks());
-  };
-
-  const filteredFeedbacks = useMemo(() => {
-    const search = searchQuery.trim().toLowerCase();
-
-    return feedbacks.filter((feedback) => {
-      const matchesSearch =
-        search.length === 0 ||
-        feedback.orderId.toLowerCase().includes(search) ||
-        feedback.customerName.toLowerCase().includes(search) ||
-        feedback.customerPhone.includes(search) ||
-        feedback.deliveryPartnerName?.toLowerCase().includes(search) ||
-        feedback.comment.toLowerCase().includes(search);
-
-      const matchesIssue =
-        issueFilter === "All Issues" || feedback.issueType === issueFilter;
-
-      const matchesRating =
-        ratingFilter === "All Ratings" ||
-        feedback.orderRating === Number(ratingFilter) ||
-        feedback.deliveryRating === Number(ratingFilter) ||
-        feedback.packagingRating === Number(ratingFilter);
-
-      const matchesRecommend =
-        recommendFilter === "All" ||
-        (recommendFilter === "Recommended" && feedback.wouldRecommend) ||
-        (recommendFilter === "Not Recommended" && !feedback.wouldRecommend);
-
-      return matchesSearch && matchesIssue && matchesRating && matchesRecommend;
-    });
-  }, [feedbacks, searchQuery, issueFilter, ratingFilter, recommendFilter]);
-
-  const stats = useMemo(() => {
-    const complaintCount = feedbacks.filter(
-      (feedback) => feedback.issueType !== "None"
-    ).length;
-
-    return {
-      total: feedbacks.length,
-      averageOrderRating: getAverage(
-        feedbacks.map((feedback) => feedback.orderRating)
-      ),
-      averageDeliveryRating: getAverage(
-        feedbacks.map((feedback) => feedback.deliveryRating)
-      ),
-      averagePackagingRating: getAverage(
-        feedbacks.map((feedback) => feedback.packagingRating)
-      ),
-      complaints: complaintCount,
-      recommended: feedbacks.filter((feedback) => feedback.wouldRecommend)
-        .length,
-      notRecommended: feedbacks.filter((feedback) => !feedback.wouldRecommend)
-        .length,
-    };
-  }, [feedbacks]);
-
-  const partnerFeedbackSummary = useMemo(() => {
-    const summaryMap = new Map<
-      string,
-      {
-        partnerName: string;
-        partnerPhone: string;
-        count: number;
-        deliveryRatings: number[];
-        complaints: number;
-      }
-    >();
-
-    feedbacks.forEach((feedback) => {
-      if (!feedback.deliveryPartnerId) return;
-
-      const existing = summaryMap.get(feedback.deliveryPartnerId) || {
-        partnerName: feedback.deliveryPartnerName || "Partner",
-        partnerPhone: feedback.deliveryPartnerPhone || "",
-        count: 0,
-        deliveryRatings: [],
-        complaints: 0,
-      };
-
-      existing.count += 1;
-      existing.deliveryRatings.push(feedback.deliveryRating);
-
-      if (feedback.issueType !== "None") {
-        existing.complaints += 1;
-      }
-
-      summaryMap.set(feedback.deliveryPartnerId, existing);
-    });
-
-    return Array.from(summaryMap.entries()).map(([partnerId, summary]) => ({
-      partnerId,
-      ...summary,
-      averageDeliveryRating: getAverage(summary.deliveryRatings),
-    }));
-  }, [feedbacks]);
-
-  const clearFilters = () => {
-    setSearchQuery("");
-    setIssueFilter("All Issues");
-    setRatingFilter("All Ratings");
-    setRecommendFilter("All");
-  };
-
-  const handleDeleteFeedback = (feedbackId: string) => {
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this feedback?"
-    );
-
-    if (!confirmDelete) return;
-
-    deleteDeliveryFeedback(feedbackId);
-    loadFeedbacks();
-    toast.success("Feedback deleted successfully");
-  };
-
-  const handleExportCsv = () => {
-    if (filteredFeedbacks.length === 0) {
-      toast.error("No feedback to export");
+    if (foundOrder.status !== "Delivered") {
+      setSelectedOrder(null);
+      setExistingFeedbackFound(false);
+      setHasSearched(true);
       return;
     }
 
-    const headers = [
-      "Feedback ID",
-      "Order ID",
-      "Customer",
-      "Phone",
-      "Partner",
-      "Order Rating",
-      "Delivery Rating",
-      "Packaging Rating",
-      "Issue",
-      "Recommend",
-      "Comment",
-      "Created At",
-    ];
+    const existingFeedback = getFeedbackByOrderId(foundOrder.id);
 
-    const rows = filteredFeedbacks.map((feedback) => [
-      feedback.id,
-      feedback.orderId,
-      feedback.customerName,
-      feedback.customerPhone,
-      feedback.deliveryPartnerName || "Not assigned",
-      feedback.orderRating,
-      feedback.deliveryRating,
-      feedback.packagingRating,
-      feedback.issueType,
-      feedback.wouldRecommend ? "Yes" : "No",
-      feedback.comment,
-      formatDateTime(feedback.createdAt),
-    ]);
+    setPhoneInput(getCustomerPhone(foundOrder));
+    setSelectedOrder(foundOrder);
+    setExistingFeedbackFound(Boolean(existingFeedback));
+    setHasSearched(true);
+    resetForm();
+  }, [queryOrderId]);
 
-    const csvContent = [headers, ...rows]
-      .map((row) =>
-        row
-          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
-          .join(",")
-      )
-      .join("\n");
+  const loadOrders = () => {
+    try {
+      const savedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
+      const savedLastOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
 
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
+      const parsedOrders = savedOrders ? (JSON.parse(savedOrders) as Order[]) : [];
+      const baseOrders = Array.isArray(parsedOrders) ? parsedOrders : [];
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+      let mergedOrders = baseOrders;
 
-    link.href = url;
-    link.download = `pujafresh-delivery-feedback-${Date.now()}.csv`;
-    link.click();
+      if (savedLastOrder) {
+        const lastOrder = JSON.parse(savedLastOrder) as Order;
+        const existsInOrders = baseOrders.some((order) => order.id === lastOrder.id);
 
-    URL.revokeObjectURL(url);
-    toast.success("Delivery feedback CSV exported");
+        mergedOrders = existsInOrders ? baseOrders : [lastOrder, ...baseOrders];
+      }
+
+      mergedOrders = mergedOrders.sort(
+        (a, b) =>
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime()
+      );
+
+      setOrders(mergedOrders);
+      return mergedOrders;
+    } catch {
+      setOrders([]);
+      return [];
+    }
   };
 
-  if (isCheckingAuth) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f7f3ea]">
-        <div className="rounded-xl bg-white p-6 text-center shadow-sm">
-          <h1 className="text-xl font-bold text-gray-900">
-            Checking admin access...
-          </h1>
-        </div>
-      </main>
+  const latestDeliveredOrders = useMemo(() => {
+    return orders.filter((order) => order.status === "Delivered").slice(0, 5);
+  }, [orders]);
+
+  const resetForm = () => {
+    setOrderRating(5);
+    setDeliveryRating(5);
+    setPackagingRating(5);
+    setIssueType("None");
+    setComment("");
+    setWouldRecommend(true);
+  };
+
+  const handleFindOrder = (event: FormEvent) => {
+    event.preventDefault();
+
+    const cleanOrderId = orderIdInput.trim();
+    const cleanPhone = phoneInput.trim();
+
+    if (!cleanOrderId) {
+      toast.error("Please enter your order ID");
+      return;
+    }
+
+    const foundOrder = orders.find(
+      (order) => order.id.toLowerCase() === cleanOrderId.toLowerCase()
     );
-  }
+
+    if (!foundOrder) {
+      setSelectedOrder(null);
+      setExistingFeedbackFound(false);
+      setHasSearched(true);
+      toast.error("Order not found");
+      return;
+    }
+
+    if (cleanPhone && getCustomerPhone(foundOrder) !== cleanPhone) {
+      setSelectedOrder(null);
+      setExistingFeedbackFound(false);
+      setHasSearched(true);
+      toast.error("Phone number does not match this order");
+      return;
+    }
+
+    if (foundOrder.status !== "Delivered") {
+      setSelectedOrder(null);
+      setExistingFeedbackFound(false);
+      setHasSearched(true);
+      toast.error("Feedback can be submitted only after delivery");
+      return;
+    }
+
+    const existingFeedback = getFeedbackByOrderId(foundOrder.id);
+
+    setExistingFeedbackFound(Boolean(existingFeedback));
+    setSelectedOrder(foundOrder);
+    setHasSearched(true);
+    resetForm();
+
+    if (existingFeedback) {
+      toast.error("Feedback already submitted for this order");
+      return;
+    }
+
+    toast.success("Delivered order found");
+  };
+
+  const handleDemoOrder = (order: Order) => {
+    setOrderIdInput(order.id);
+    setPhoneInput(getCustomerPhone(order));
+    setSelectedOrder(order);
+    setExistingFeedbackFound(Boolean(getFeedbackByOrderId(order.id)));
+    setHasSearched(true);
+    resetForm();
+    toast.success("Demo delivered order loaded");
+  };
+
+  const handleSubmitFeedback = (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!selectedOrder) {
+      toast.error("Please find a delivered order first");
+      return;
+    }
+
+    if (existingFeedbackFound) {
+      toast.error("Feedback already submitted for this order");
+      return;
+    }
+
+    if (issueType !== "None" && !comment.trim()) {
+      toast.error("Please add a short comment for the selected issue");
+      return;
+    }
+
+    addDeliveryFeedback({
+      id: createDeliveryFeedbackId(),
+      orderId: selectedOrder.id,
+      customerName: getCustomerName(selectedOrder),
+      customerPhone: getCustomerPhone(selectedOrder),
+      customerEmail: getCustomerEmail(selectedOrder),
+      deliveryPartnerId: selectedOrder.deliveryPartner?.id,
+      deliveryPartnerName: selectedOrder.deliveryPartner?.name,
+      deliveryPartnerPhone: selectedOrder.deliveryPartner?.phone,
+      orderRating,
+      deliveryRating,
+      packagingRating,
+      issueType,
+      comment: comment.trim(),
+      wouldRecommend,
+      createdAt: new Date().toISOString(),
+    });
+
+    setExistingFeedbackFound(true);
+    toast.success("Thank you for your feedback");
+  };
 
   return (
     <main className="min-h-screen bg-[#f7f3ea]">
       <Navbar />
 
       <section className="mx-auto max-w-7xl px-4 py-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Delivery Feedback
-            </h1>
+        <div className="rounded-3xl bg-gradient-to-r from-[#7a1e13] to-[#f97316] p-8 text-white shadow-sm md:p-10">
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-orange-100">
+            PujaFresh Feedback
+          </p>
 
-            <p className="mt-1 text-sm text-gray-600">
-              Review customer delivery ratings, complaints, packaging feedback
-              and partner-wise service quality.
-            </p>
-          </div>
+          <h1 className="mt-3 text-4xl font-black tracking-tight md:text-5xl">
+            Delivery Feedback
+          </h1>
 
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/admin"
-              className="rounded border border-[#7a1e13] px-5 py-3 text-sm font-bold text-[#7a1e13] hover:bg-[#7a1e13] hover:text-white"
-            >
-              Back to Admin
-            </Link>
-
-            <Link
-              href="/delivery-feedback"
-              className="rounded border border-[#15803d] px-5 py-3 text-sm font-bold text-[#15803d] hover:bg-[#15803d] hover:text-white"
-            >
-              Customer Form
-            </Link>
-
-            <button
-              onClick={loadFeedbacks}
-              className="rounded bg-[#15803d] px-5 py-3 text-sm font-bold text-white hover:bg-[#166534]"
-            >
-              Refresh
-            </button>
-
-            <button
-              onClick={handleExportCsv}
-              className="rounded bg-[#f97316] px-5 py-3 text-sm font-bold text-white hover:bg-[#ea580c]"
-            >
-              Export CSV
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-6">
-          <div className="rounded-xl bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-gray-500">Feedbacks</p>
-            <h2 className="mt-2 text-3xl font-bold text-gray-900">
-              {stats.total}
-            </h2>
-          </div>
-
-          <div className="rounded-xl bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-gray-500">
-              Order Rating
-            </p>
-            <h2 className="mt-2 text-3xl font-bold text-[#7a1e13]">
-              {stats.averageOrderRating}
-            </h2>
-          </div>
-
-          <div className="rounded-xl bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-gray-500">
-              Delivery Rating
-            </p>
-            <h2 className="mt-2 text-3xl font-bold text-green-700">
-              {stats.averageDeliveryRating}
-            </h2>
-          </div>
-
-          <div className="rounded-xl bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-gray-500">
-              Packaging
-            </p>
-            <h2 className="mt-2 text-3xl font-bold text-orange-600">
-              {stats.averagePackagingRating}
-            </h2>
-          </div>
-
-          <div className="rounded-xl bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-gray-500">Complaints</p>
-            <h2 className="mt-2 text-3xl font-bold text-red-600">
-              {stats.complaints}
-            </h2>
-          </div>
-
-          <div className="rounded-xl bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-gray-500">
-              Recommended
-            </p>
-            <h2 className="mt-2 text-3xl font-bold text-blue-700">
-              {stats.recommended}
-            </h2>
-          </div>
-        </div>
-
-        <div className="mt-6 rounded-xl bg-white p-5 shadow-sm">
-          <div className="grid gap-4 xl:grid-cols-[1fr_180px_160px_190px_130px]">
-            <div>
-              <label className="text-sm font-bold text-gray-700">
-                Search Feedback
-              </label>
-
-              <input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search order, customer, phone, partner or comment..."
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#7a1e13]"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-bold text-gray-700">Issue</label>
-
-              <select
-                value={issueFilter}
-                onChange={(event) => setIssueFilter(event.target.value)}
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#7a1e13]"
-              >
-                {issueFilters.map((issue) => (
-                  <option key={issue}>{issue}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-sm font-bold text-gray-700">Rating</label>
-
-              <select
-                value={ratingFilter}
-                onChange={(event) => setRatingFilter(event.target.value)}
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#7a1e13]"
-              >
-                {ratingFilters.map((rating) => (
-                  <option key={rating}>{rating}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-sm font-bold text-gray-700">
-                Recommend
-              </label>
-
-              <select
-                value={recommendFilter}
-                onChange={(event) => setRecommendFilter(event.target.value)}
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#7a1e13]"
-              >
-                <option>All</option>
-                <option>Recommended</option>
-                <option>Not Recommended</option>
-              </select>
-            </div>
-
-            <div className="flex items-end">
-              <button
-                onClick={clearFilters}
-                className="w-full rounded border border-[#7a1e13] px-4 py-2 text-sm font-bold text-[#7a1e13] hover:bg-[#7a1e13] hover:text-white"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-
-          <p className="mt-4 text-sm font-semibold text-gray-600">
-            Showing {filteredFeedbacks.length} of {feedbacks.length} feedback
-            {feedbacks.length !== 1 ? "s" : ""}.
+          <p className="mt-4 max-w-3xl text-orange-50">
+            Share your experience after delivery. Your feedback helps improve
+            packaging, delivery quality and customer support.
           </p>
         </div>
 
-        <div className="mt-6 rounded-xl bg-white p-5 shadow-sm">
-          <h2 className="text-xl font-bold text-gray-900">
-            Partner Feedback Summary
-          </h2>
+        <div className="mt-6 grid gap-6 lg:grid-cols-[420px_1fr]">
+          <div className="rounded-2xl bg-white p-6 shadow-sm">
+            <h2 className="text-2xl font-black text-gray-900">
+              Find Delivered Order
+            </h2>
 
-          {partnerFeedbackSummary.length === 0 ? (
-            <p className="mt-4 text-sm text-gray-600">
-              Partner feedback will appear after customers submit ratings.
+            <p className="mt-2 text-sm text-gray-600">
+              Enter order ID and optional phone number to submit feedback.
             </p>
-          ) : (
-            <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {partnerFeedbackSummary.map((summary) => (
-                <div
-                  key={summary.partnerId}
-                  className="rounded-xl border border-gray-200 p-4"
+
+            <form onSubmit={handleFindOrder} className="mt-5 grid gap-4">
+              <div>
+                <label className="text-sm font-bold text-gray-700">
+                  Order ID *
+                </label>
+
+                <input
+                  value={orderIdInput}
+                  onChange={(event) => setOrderIdInput(event.target.value)}
+                  placeholder="Example: PF-1234567890"
+                  className="mt-1 w-full rounded border border-gray-300 px-4 py-3 outline-none focus:border-[#7a1e13]"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-bold text-gray-700">
+                  Phone Number
+                </label>
+
+                <input
+                  value={phoneInput}
+                  onChange={(event) =>
+                    setPhoneInput(event.target.value.replace(/\D/g, "").slice(0, 10))
+                  }
+                  placeholder="Registered phone number"
+                  className="mt-1 w-full rounded border border-gray-300 px-4 py-3 outline-none focus:border-[#7a1e13]"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="rounded bg-[#7a1e13] px-6 py-3 font-bold text-white hover:bg-[#64180f]"
+              >
+                Find Order
+              </button>
+            </form>
+
+            {latestDeliveredOrders.length > 0 && (
+              <div className="mt-6 rounded-xl bg-[#fff7ed] p-4">
+                <p className="text-sm font-bold text-gray-900">
+                  Demo delivered orders
+                </p>
+
+                <div className="mt-3 grid gap-2">
+                  {latestDeliveredOrders.map((order) => (
+                    <button
+                      key={order.id}
+                      onClick={() => handleDemoOrder(order)}
+                      className="rounded bg-white px-4 py-2 text-left text-sm font-semibold text-gray-700 hover:text-[#7a1e13]"
+                    >
+                      {order.id} — {getCustomerName(order)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div>
+            {!selectedOrder && hasSearched && (
+              <div className="rounded-2xl bg-white p-10 text-center shadow-sm">
+                <h2 className="text-2xl font-black text-gray-900">
+                  Feedback Not Available
+                </h2>
+
+                <p className="mt-3 text-gray-600">
+                  Please check order ID or make sure your order is delivered.
+                </p>
+
+                <Link
+                  href={orderIdInput ? `/track-order?orderId=${encodeURIComponent(orderIdInput)}` : "/track-order"}
+                  className="mt-6 inline-block rounded bg-[#7a1e13] px-6 py-3 font-bold text-white"
                 >
-                  <h3 className="font-bold text-gray-900">
-                    {summary.partnerName}
-                  </h3>
+                  Track Order
+                </Link>
+              </div>
+            )}
 
-                  <p className="mt-1 text-sm text-gray-600">
-                    {summary.partnerPhone || "No phone"}
-                  </p>
+            {!selectedOrder && !hasSearched && (
+              <div className="rounded-2xl bg-white p-10 text-center shadow-sm">
+                <h2 className="text-2xl font-black text-gray-900">
+                  Search a delivered order
+                </h2>
 
-                  <div className="mt-4 grid grid-cols-3 gap-3 text-center text-sm">
-                    <div className="rounded bg-gray-50 p-3">
-                      <p className="text-gray-500">Feedback</p>
-                      <p className="font-black text-gray-900">
-                        {summary.count}
-                      </p>
-                    </div>
+                <p className="mt-3 text-gray-600">
+                  Feedback form will appear after you find a delivered order.
+                </p>
+              </div>
+            )}
 
-                    <div className="rounded bg-gray-50 p-3">
-                      <p className="text-gray-500">Rating</p>
-                      <p className="font-black text-green-700">
-                        {summary.averageDeliveryRating}
-                      </p>
-                    </div>
+            {selectedOrder && (
+              <form
+                onSubmit={handleSubmitFeedback}
+                className="rounded-2xl bg-white p-6 shadow-sm"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-black uppercase tracking-wide text-gray-500">
+                      Feedback for
+                    </p>
 
-                    <div className="rounded bg-gray-50 p-3">
-                      <p className="text-gray-500">Issues</p>
-                      <p className="font-black text-red-600">
-                        {summary.complaints}
-                      </p>
-                    </div>
+                    <h2 className="mt-1 text-2xl font-black text-gray-900">
+                      {selectedOrder.id}
+                    </h2>
+
+                    <p className="mt-2 text-sm text-gray-600">
+                      Delivered at {formatDateTime(selectedOrder.deliveredAt)}
+                    </p>
+                  </div>
+
+                  <span className="rounded-full bg-green-50 px-4 py-2 text-sm font-bold text-green-700">
+                    Delivered
+                  </span>
+                </div>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-3">
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <p className="text-xs font-bold text-gray-500">
+                      Customer
+                    </p>
+                    <p className="mt-1 font-black text-gray-900">
+                      {getCustomerName(selectedOrder)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <p className="text-xs font-bold text-gray-500">
+                      Partner
+                    </p>
+                    <p className="mt-1 font-black text-gray-900">
+                      {selectedOrder.deliveryPartner?.name || "Not assigned"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <p className="text-xs font-bold text-gray-500">
+                      Order Total
+                    </p>
+                    <p className="mt-1 font-black text-gray-900">
+                      ₹{selectedOrder.total || 0}
+                    </p>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
 
-        <div className="mt-6 rounded-xl bg-white p-5 shadow-sm">
-          <h2 className="text-xl font-bold text-gray-900">
-            Feedback List
-          </h2>
+                {existingFeedbackFound ? (
+                  <div className="mt-6 rounded-xl bg-green-50 p-5 text-center">
+                    <h3 className="text-xl font-black text-green-700">
+                      Feedback already submitted
+                    </h3>
 
-          {filteredFeedbacks.length === 0 ? (
-            <div className="py-12 text-center">
-              <h3 className="text-lg font-bold text-gray-900">
-                No feedback found
-              </h3>
+                    <p className="mt-2 text-sm text-green-700">
+                      Thank you for sharing your experience with PujaFresh.
+                    </p>
 
-              <p className="mt-2 text-gray-600">
-                Customer feedback will appear here after delivery.
-              </p>
-            </div>
-          ) : (
-            <div className="mt-5 grid gap-4">
-              {filteredFeedbacks.map((feedback) => (
-                <div
-                  key={feedback.id}
-                  className="rounded-xl border border-gray-200 p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="max-w-4xl">
-                      <div className="flex flex-wrap gap-2">
-                        <span className="rounded bg-[#fff7ed] px-3 py-1 text-xs font-bold text-[#7a1e13]">
-                          {feedback.orderId}
-                        </span>
+                    <Link
+                      href={orderIdInput ? `/track-order?orderId=${encodeURIComponent(orderIdInput)}` : "/track-order"}
+                      className="mt-5 inline-block rounded bg-[#7a1e13] px-5 py-3 text-sm font-bold text-white"
+                    >
+                      Track Another Order
+                    </Link>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-6 grid gap-4 md:grid-cols-3">
+                      <div>
+                        <label className="text-sm font-bold text-gray-700">
+                          Overall Order Rating
+                        </label>
 
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-bold ${
-                            feedback.issueType === "None"
-                              ? "bg-green-50 text-green-700"
-                              : "bg-red-50 text-red-700"
-                          }`}
+                        <select
+                          value={orderRating}
+                          onChange={(event) =>
+                            setOrderRating(Number(event.target.value))
+                          }
+                          className="mt-1 w-full rounded border border-gray-300 px-3 py-3 outline-none focus:border-[#7a1e13]"
                         >
-                          {feedback.issueType}
-                        </span>
-
-                        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
-                          {feedback.wouldRecommend
-                            ? "Recommended"
-                            : "Not Recommended"}
-                        </span>
+                          {ratingOptions.map((rating) => (
+                            <option key={rating} value={rating}>
+                              {rating} Star{rating !== 1 ? "s" : ""}
+                            </option>
+                          ))}
+                        </select>
                       </div>
 
-                      <h3 className="mt-3 font-bold text-gray-900">
-                        {feedback.customerName}
-                      </h3>
+                      <div>
+                        <label className="text-sm font-bold text-gray-700">
+                          Delivery Rating
+                        </label>
 
-                      <p className="mt-1 text-sm text-gray-600">
-                        {feedback.customerPhone} • Partner:{" "}
-                        {feedback.deliveryPartnerName || "Not assigned"}
-                      </p>
-
-                      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                        <div className="rounded bg-gray-50 p-3">
-                          <p className="text-gray-500">Order Rating</p>
-                          <p className="font-black text-gray-900">
-                            {feedback.orderRating}/5
-                          </p>
-                        </div>
-
-                        <div className="rounded bg-gray-50 p-3">
-                          <p className="text-gray-500">Delivery Rating</p>
-                          <p className="font-black text-gray-900">
-                            {feedback.deliveryRating}/5
-                          </p>
-                        </div>
-
-                        <div className="rounded bg-gray-50 p-3">
-                          <p className="text-gray-500">Packaging Rating</p>
-                          <p className="font-black text-gray-900">
-                            {feedback.packagingRating}/5
-                          </p>
-                        </div>
+                        <select
+                          value={deliveryRating}
+                          onChange={(event) =>
+                            setDeliveryRating(Number(event.target.value))
+                          }
+                          className="mt-1 w-full rounded border border-gray-300 px-3 py-3 outline-none focus:border-[#7a1e13]"
+                        >
+                          {ratingOptions.map((rating) => (
+                            <option key={rating} value={rating}>
+                              {rating} Star{rating !== 1 ? "s" : ""}
+                            </option>
+                          ))}
+                        </select>
                       </div>
 
-                      {feedback.comment && (
-                        <p className="mt-4 rounded bg-gray-50 p-3 text-sm leading-6 text-gray-700">
-                          {feedback.comment}
-                        </p>
-                      )}
+                      <div>
+                        <label className="text-sm font-bold text-gray-700">
+                          Packaging Rating
+                        </label>
 
-                      <p className="mt-3 text-xs font-semibold text-gray-500">
-                        Submitted on {formatDateTime(feedback.createdAt)}
-                      </p>
+                        <select
+                          value={packagingRating}
+                          onChange={(event) =>
+                            setPackagingRating(Number(event.target.value))
+                          }
+                          className="mt-1 w-full rounded border border-gray-300 px-3 py-3 outline-none focus:border-[#7a1e13]"
+                        >
+                          {ratingOptions.map((rating) => (
+                            <option key={rating} value={rating}>
+                              {rating} Star{rating !== 1 ? "s" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <Link
-                        href={`/invoice/${feedback.orderId}`}
-                        className="rounded border border-[#7a1e13] px-3 py-2 text-xs font-bold text-[#7a1e13] hover:bg-[#7a1e13] hover:text-white"
-                      >
-                        Invoice
-                      </Link>
+                    <div className="mt-5 grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="text-sm font-bold text-gray-700">
+                          Issue Type
+                        </label>
 
-                      <button
-                        onClick={() => handleDeleteFeedback(feedback.id)}
-                        className="rounded border border-red-600 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-600 hover:text-white"
-                      >
-                        Delete
-                      </button>
+                        <select
+                          value={issueType}
+                          onChange={(event) =>
+                            setIssueType(event.target.value as DeliveryFeedbackIssue)
+                          }
+                          className="mt-1 w-full rounded border border-gray-300 px-3 py-3 outline-none focus:border-[#7a1e13]"
+                        >
+                          {issueTypes.map((issue) => (
+                            <option key={issue}>{issue}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-bold text-gray-700">
+                          Would you recommend PujaFresh?
+                        </label>
+
+                        <select
+                          value={String(wouldRecommend)}
+                          onChange={(event) =>
+                            setWouldRecommend(event.target.value === "true")
+                          }
+                          className="mt-1 w-full rounded border border-gray-300 px-3 py-3 outline-none focus:border-[#7a1e13]"
+                        >
+                          <option value="true">Yes</option>
+                          <option value="false">No</option>
+                        </select>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+
+                    <div className="mt-5">
+                      <label className="text-sm font-bold text-gray-700">
+                        Comment
+                      </label>
+
+                      <textarea
+                        value={comment}
+                        onChange={(event) => setComment(event.target.value)}
+                        rows={4}
+                        placeholder="Share your experience..."
+                        className="mt-1 w-full rounded border border-gray-300 px-3 py-3 outline-none focus:border-[#7a1e13]"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="mt-5 rounded bg-[#7a1e13] px-8 py-3 font-bold text-white hover:bg-[#64180f]"
+                    >
+                      Submit Feedback
+                    </button>
+                  </>
+                )}
+              </form>
+            )}
+          </div>
         </div>
       </section>
     </main>
+  );
+}
+
+
+function DeliveryFeedbackFallback() {
+  return (
+    <main className="min-h-screen bg-[#f7f3ea]">
+      <Navbar />
+
+      <section className="mx-auto max-w-6xl px-4 py-10">
+        <div className="rounded-xl bg-white p-8 text-center shadow-sm">
+          <h1 className="text-xl font-bold text-gray-900">
+            Loading delivery feedback...
+          </h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Please wait while we prepare your feedback page.
+          </p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export default function DeliveryFeedbackPage() {
+  return (
+    <Suspense fallback={<DeliveryFeedbackFallback />}>
+      <DeliveryFeedbackContent />
+    </Suspense>
   );
 }

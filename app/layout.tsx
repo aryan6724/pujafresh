@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Providers from "@/components/Providers";
 import Footer from "@/components/Footer";
-import "./globals.css";
 import AnnouncementBar from "@/components/AnnouncementBar";
+import AuthSessionProvider from "@/components/AuthSessionProvider";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "PujaFresh | Fresh Pooja Essentials Delivered Every Morning",
@@ -18,11 +19,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <Providers>
-          <AnnouncementBar />
-          {children}
-          <Footer />
-        </Providers>
+        <AuthSessionProvider>
+          <Providers>
+            <AnnouncementBar />
+            {children}
+            <Footer />
+          </Providers>
+        </AuthSessionProvider>
       </body>
     </html>
   );

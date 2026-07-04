@@ -1,144 +1,129 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { Minus, Plus, Trash2 } from "lucide-react";
-import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
+import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
-import { Product } from "@/types";
-import { getProducts } from "@/utils/productStorage";
 
-type CartProduct = Product & {
-  quantity: number;
+const getSafeImage = (image: unknown) => {
+  const value = String(image || "").trim();
+
+  if (value.length > 0) {
+    return value;
+  }
+
+  return "/premium-pooja-pack.jpg";
+};
+
+const isCustomKitItem = (item: any) => {
+  return (
+    item?.category === "Custom Kit" ||
+    item?.badge === "Custom Kit" ||
+    String(item?.slug || "").startsWith("custom-pooja-kit")
+  );
+};
+
+const getAvailableStock = (item: any) => {
+  if (isCustomKitItem(item)) return null;
+
+  return Number(
+    item?.stockQuantity ??
+      (item?.stock === "Out of Stock" || item?.stock === "Coming Soon"
+        ? 0
+        : 999)
+  );
+};
+
+const getCartActionId = (item: any, index: number) => {
+  const numericId = Number(item?.id);
+
+  if (Number.isFinite(numericId) && numericId > 0) return numericId;
+
+  return index + 1;
 };
 
 export default function CartPage() {
-  const {
-    cartItems,
-    removeFromCart,
-    increaseQuantity,
-    decreaseQuantity,
-  } = useCart();
+  const auth = useAuth() as any;
+  const cart = useCart() as any;
 
-  const [latestProducts, setLatestProducts] = useState<Product[]>([]);
+  const isLoggedIn = Boolean(auth?.isLoggedIn);
+  const cartItems = Array.isArray(cart?.cartItems) ? cart.cartItems : [];
 
-  useEffect(() => {
-    setLatestProducts(getProducts());
-  }, []);
+  const removeFromCart = cart?.removeFromCart;
+  const increaseQuantity = cart?.increaseQuantity;
+  const decreaseQuantity = cart?.decreaseQuantity;
+  const clearCart = cart?.clearCart;
 
-  const updatedCartItems = useMemo(() => {
-    return cartItems.map((item) => {
-      const latestProduct = latestProducts.find(
-        (product) => product.id === item.id || product.slug === item.slug
-      );
+  let cartCount = 0;
+  let cartTotal = 0;
 
-      return {
-        ...(latestProduct || item),
-        quantity: item.quantity,
-      } as CartProduct;
-    });
-  }, [cartItems, latestProducts]);
+  for (const item of cartItems) {
+    cartCount = cartCount + Number(item?.quantity || 0);
+    cartTotal = cartTotal + Number(item?.price || 0) * Number(item?.quantity || 0);
+  }
 
-  const getAvailableStock = (item: CartProduct) => {
-    return Number(
-      item.stockQuantity ??
-        (item.stock === "Out of Stock" || item.stock === "Coming Soon"
-          ? 0
-          : 999)
-    );
-  };
+  const availableCartItems = cartItems.filter((item: any) => {
+    return item?.stock !== "Out of Stock" && item?.stock !== "Coming Soon";
+  });
 
-  const isCustomKit = (item: CartProduct) => {
-    return (
-      item.category === "Custom Kit" ||
-      item.slug?.startsWith("custom-pooja-kit") ||
-      item.badge === "Custom Kit"
-    );
-  };
+  const hasUnavailableItems = availableCartItems.length !== cartItems.length;
 
-  const getCustomKitItems = (item: CartProduct) => {
-    const description = String((item as any).description || "");
-
-    if (!isCustomKit(item) || !description) return [];
-
-    return description
-      .split(",")
-      .map((kitItem) => kitItem.trim())
-      .filter(Boolean);
-  };
-
-  const isUnavailableProduct = (item: CartProduct) => {
-    if (isCustomKit(item)) return false;
-
-    return (
-      item.stock === "Out of Stock" ||
-      item.stock === "Coming Soon" ||
-      getAvailableStock(item) <= 0
-    );
-  };
-
-  const isOverStockLimit = (item: CartProduct) => {
-    if (isCustomKit(item)) return false;
-
-    return !isUnavailableProduct(item) && item.quantity > getAvailableStock(item);
-  };
-
-  const availableCartItems = updatedCartItems.filter(
-    (item) => !isUnavailableProduct(item)
-  );
-
-  const unavailableCartItems = updatedCartItems.filter((item) =>
-    isUnavailableProduct(item)
-  );
-
-  const availableCartTotal = availableCartItems.reduce(
-    (total, item) => total + item.price * item.quantity,
-    0
-  );
-
-  const deliveryCharge =
-    availableCartTotal >= 299 || availableCartTotal === 0 ? 0 : 30;
-
-  const finalTotal = availableCartTotal + deliveryCharge;
-
-  const hasUnavailableItems = unavailableCartItems.length > 0;
-  const hasStockLimitIssues = availableCartItems.some((item) =>
-    isOverStockLimit(item)
-  );
-
-  const canCheckout =
-    availableCartItems.length > 0 && !hasUnavailableItems && !hasStockLimitIssues;
-
-  const handleIncreaseQuantity = (item: CartProduct) => {
-    const availableStock = getAvailableStock(item);
-
-    if (isUnavailableProduct(item)) {
-      toast.error("This product is not available right now");
-      return;
-    }
-
-    if (item.quantity >= availableStock) {
-      toast.error(`Only ${availableStock} unit(s) available`);
-      return;
-    }
-
-    increaseQuantity(item.id);
-  };
+  const deliveryCharge = cartTotal >= 299 || cartTotal === 0 ? 0 : 30;
+  const finalTotal = cartTotal + deliveryCharge;
 
   return (
     <main className="min-h-screen bg-[#f7f3ea]">
       <Navbar />
 
       <section className="mx-auto max-w-7xl px-4 py-8">
-        <h1 className="text-2xl font-bold text-gray-900">My Cart</h1>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-black text-gray-900">My Cart</h1>
 
-        {cartItems.length === 0 ? (
-          <div className="mt-6 rounded-xl bg-white p-10 text-center shadow-sm">
-            <h2 className="text-xl font-bold">Your cart is empty</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              {cartCount > 0
+                ? `${cartCount} item${cartCount !== 1 ? "s" : ""} in your cart`
+                : "Your cart is currently empty"}
+            </p>
+          </div>
+
+          {cartItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => clearCart?.()}
+              className="rounded border border-red-600 px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50"
+            >
+              Clear Cart
+            </button>
+          )}
+        </div>
+
+        {!isLoggedIn && cartItems.length === 0 ? (
+          <div className="rounded-xl bg-white p-8 text-center shadow-sm">
+            <h2 className="text-2xl font-bold text-gray-900">
+              Please login to view your cart
+            </h2>
+
             <p className="mt-2 text-gray-600">
-              Add fresh pooja flowers, samagri or kits to continue.
+              Your cart is saved safely after login.
+            </p>
+
+            <Link
+              href="/login?callbackUrl=/cart"
+              className="mt-6 inline-block rounded bg-[#7a1e13] px-6 py-3 font-bold text-white"
+            >
+              Login
+            </Link>
+          </div>
+        ) : cartItems.length === 0 ? (
+          <div className="rounded-xl bg-white p-8 text-center shadow-sm">
+            <h2 className="text-2xl font-bold text-gray-900">
+              Your cart is empty
+            </h2>
+
+            <p className="mt-2 text-gray-600">
+              Add fresh flowers, pooja samagri, or custom kits to continue.
             </p>
 
             <Link
@@ -149,185 +134,136 @@ export default function CartPage() {
             </Link>
           </div>
         ) : (
-          <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
+          <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
             <div className="space-y-4">
-              {hasUnavailableItems && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <p className="font-bold">Some items are not available</p>
-                  <p className="mt-1">
-                    Please remove Out of Stock or Coming Soon products before
-                    checkout.
-                  </p>
-                </div>
-              )}
+              {cartItems.map((item: any, index: number) => {
+                const itemId = getCartActionId(item, index);
+                const quantity = Number(item?.quantity || 1);
+                const price = Number(item?.price || 0);
+                const mrp = Number(item?.mrp || 0);
+                const lineTotal = price * quantity;
+                const stockQuantity = getAvailableStock(item);
+                const isUnavailable =
+                  item?.stock === "Out of Stock" || item?.stock === "Coming Soon";
+                const isCustomKit = isCustomKitItem(item);
 
-              {updatedCartItems.map((item) => {
-                const customKit = isCustomKit(item);
-                const customKitItems = getCustomKitItems(item);
-                const isUnavailable = isUnavailableProduct(item);
-                const availableStock = getAvailableStock(item);
-                const isStockLimitReached =
-                  !customKit && !isUnavailable && item.quantity >= availableStock;
-                const hasStockIssue = isOverStockLimit(item);
+                const customKitItems =
+                  isCustomKit && item?.description
+                    ? String(item.description)
+                        .split(",")
+                        .map((kitItem) => kitItem.trim())
+                        .filter(Boolean)
+                    : [];
 
                 return (
                   <div
-                    key={item.id}
-                    className={`grid gap-4 rounded-xl bg-white p-4 shadow-sm md:grid-cols-[140px_1fr_auto] ${
-                      isUnavailable ? "border border-red-200" : ""
-                    }`}
+                    key={`${item?.slug || "cart-item"}-${itemId}-${index}`}
+                    className="rounded-xl bg-white p-4 shadow-sm"
                   >
-                    <div className="relative h-36 overflow-hidden rounded-lg bg-[#fff7ed]">
-                      {isUnavailable && (
-                        <div className="absolute left-2 top-2 z-10 rounded bg-red-600 px-2 py-1 text-xs font-bold uppercase text-white">
-                          {item.stock}
-                        </div>
-                      )}
+                    <div className="grid gap-4 md:grid-cols-[160px_1fr_180px]">
+                      <div className="h-40 overflow-hidden rounded-lg bg-[#fff7ed]">
+                        <img
+                          src={getSafeImage(item?.image)}
+                          alt={String(item?.name || "Cart item")}
+                          className="h-full w-full object-contain p-2"
+                          onError={(event) => {
+                            event.currentTarget.src = "/premium-pooja-pack.jpg";
+                          }}
+                        />
+                      </div>
 
-                      <Image
-                        src={item.image}
-                        alt={item.name}
-                        fill
-                        className={`object-cover ${
-                          isUnavailable ? "opacity-60 grayscale" : ""
-                        }`}
-                      />
-                    </div>
+                      <div>
+                        <h2 className="text-xl font-black text-gray-900">
+                          {item?.name || "Product"}
+                        </h2>
 
-                    <div>
-                      <h2 className="text-lg font-bold text-gray-900">
-                        {item.name}
-                      </h2>
-
-                      <p className="mt-1 text-sm text-gray-500">
-                        {item.category}
-                      </p>
-
-                      {customKit ? (
-                        <p className="mt-2 inline-flex rounded-full bg-[#fff7ed] px-3 py-1 text-xs font-bold uppercase text-[#7a1e13]">
-                          Custom selected kit
+                        <p className="mt-1 text-gray-600">
+                          {item?.category || "Pooja Essentials"}
                         </p>
-                      ) : (
+
                         <p
-                          className={`mt-2 text-sm font-bold ${
+                          className={`mt-3 text-sm font-bold ${
                             isUnavailable ? "text-red-600" : "text-[#15803d]"
                           }`}
                         >
-                          {item.stock}
+                          {item?.stock || "In Stock"}
                         </p>
-                      )}
 
-                      <p className="mt-1 text-sm font-medium text-gray-600">
-                        {item.delivery}
-                      </p>
+                        <p className="mt-2 text-sm text-gray-700">
+                          {item?.delivery || "Early morning delivery"}
+                        </p>
 
-                      {customKit && customKitItems.length > 0 && (
-                        <div className="mt-3 rounded-lg bg-[#fff7ed] p-3">
-                          <p className="text-xs font-black uppercase tracking-wide text-[#7a1e13]">
-                            Kit includes
+                        {stockQuantity !== null && (
+                          <p className="mt-1 text-sm font-bold text-gray-800">
+                            Available Stock: {stockQuantity} units
                           </p>
+                        )}
 
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {customKitItems.map((kitItem) => (
+                        {customKitItems.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {customKitItems.slice(0, 8).map((kitItem) => (
                               <span
                                 key={kitItem}
-                                className="rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-700 shadow-sm"
+                                className="rounded-full bg-[#fff7ed] px-3 py-1 text-xs font-bold text-[#7a1e13]"
                               >
                                 {kitItem}
                               </span>
                             ))}
                           </div>
-                        </div>
-                      )}
-
-                      {!customKit && (
-                        <p
-                          className={`mt-1 text-sm font-semibold ${
-                            availableStock <= 5
-                              ? "text-orange-600"
-                              : "text-gray-700"
-                          }`}
-                        >
-                          Available Stock: {availableStock} units
-                        </p>
-                      )}
-
-                      {hasStockIssue && (
-                        <p className="mt-2 rounded bg-orange-50 p-2 text-xs font-semibold text-orange-700">
-                          Your cart has {item.quantity} units, but only{" "}
-                          {availableStock} units are available. Please reduce
-                          quantity before checkout.
-                        </p>
-                      )}
-
-                      {isUnavailable && (
-                        <p className="mt-2 rounded bg-red-50 p-2 text-xs font-semibold text-red-600">
-                          This product cannot be purchased right now. Please
-                          remove it from cart.
-                        </p>
-                      )}
-
-                      <div className="mt-3 flex items-center gap-2">
-                        <span className="text-xl font-bold">₹{item.price}</span>
-
-                        {item.mrp > item.price && (
-                          <span className="text-sm text-gray-400 line-through">
-                            ₹{item.mrp}
-                          </span>
                         )}
-                      </div>
 
-                      <button
-                        onClick={() => removeFromCart(item.id)}
-                        className="mt-3 flex items-center gap-1 text-sm font-semibold text-red-600"
-                      >
-                        <Trash2 size={16} />
-                        Remove
-                      </button>
-                    </div>
+                        <div className="mt-4 flex flex-wrap items-center gap-3">
+                          <span className="text-2xl font-black text-gray-900">
+                            ₹{price}
+                          </span>
 
-                    <div className="flex items-center gap-3 md:flex-col md:justify-center">
-                      <div className="flex items-center overflow-hidden rounded border border-gray-300">
-                        <button
-                          onClick={() => decreaseQuantity(item.id)}
-                          disabled={isUnavailable}
-                          className={`px-3 py-2 ${
-                            isUnavailable
-                              ? "cursor-not-allowed text-gray-400"
-                              : "hover:bg-gray-100"
-                          }`}
-                        >
-                          <Minus size={16} />
-                        </button>
-
-                        <span className="px-4 py-2 font-bold">
-                          {item.quantity}
-                        </span>
+                          {mrp > price && (
+                            <span className="text-sm text-gray-400 line-through">
+                              ₹{mrp}
+                            </span>
+                          )}
+                        </div>
 
                         <button
-                          onClick={() => handleIncreaseQuantity(item)}
-                          disabled={isUnavailable || isStockLimitReached}
-                          className={`px-3 py-2 ${
-                            isUnavailable || isStockLimitReached
-                              ? "cursor-not-allowed text-gray-400"
-                              : "hover:bg-gray-100"
-                          }`}
+                          type="button"
+                          onClick={() => removeFromCart?.(itemId)}
+                          className="mt-4 inline-flex items-center gap-1 text-sm font-bold text-red-600"
                         >
-                          <Plus size={16} />
+                          <Trash2 size={16} />
+                          Remove
                         </button>
                       </div>
 
-                      <p className="font-bold">
-                        {isUnavailable
-                          ? "Not available"
-                          : `₹${item.price * item.quantity}`}
-                      </p>
+                      <div className="flex flex-col items-end justify-center gap-5">
+                        <div className="flex overflow-hidden rounded border border-gray-300">
+                          <button
+                            type="button"
+                            onClick={() => decreaseQuantity?.(itemId)}
+                            className="px-4 py-3 hover:bg-gray-100"
+                          >
+                            <Minus size={16} />
+                          </button>
 
-                      {!isUnavailable && isStockLimitReached && (
-                        <p className="text-center text-xs font-semibold text-orange-600">
-                          Stock limit reached
+                          <span className="min-w-12 px-4 py-3 text-center font-black">
+                            {quantity}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => increaseQuantity?.(itemId)}
+                            disabled={
+                              stockQuantity !== null && quantity >= stockQuantity
+                            }
+                            className="px-4 py-3 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+
+                        <p className="text-xl font-black text-gray-900">
+                          ₹{lineTotal}
                         </p>
-                      )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -335,86 +271,61 @@ export default function CartPage() {
             </div>
 
             <aside className="h-fit rounded-xl bg-white p-5 shadow-sm">
-              <h2 className="border-b pb-3 text-lg font-bold">
+              <h2 className="text-xl font-black text-gray-900">
                 Price Details
               </h2>
 
-              <div className="mt-4 space-y-3 text-sm">
+              <div className="mt-4 space-y-3 border-t pt-4 text-sm">
                 <div className="flex justify-between">
                   <span>Available Items</span>
                   <span>{availableCartItems.length}</span>
                 </div>
 
-                {hasUnavailableItems && (
-                  <div className="flex justify-between text-red-600">
-                    <span>Unavailable Items</span>
-                    <span>{unavailableCartItems.length}</span>
-                  </div>
-                )}
-
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-                  <span>₹{availableCartTotal}</span>
+                  <span>₹{cartTotal}</span>
                 </div>
 
                 <div className="flex justify-between">
                   <span>Delivery Charge</span>
-                  <span>
-                    {deliveryCharge === 0 ? (
-                      <span className="font-semibold text-[#15803d]">FREE</span>
-                    ) : (
-                      `₹${deliveryCharge}`
-                    )}
-                  </span>
+                  <span>{deliveryCharge === 0 ? "FREE" : `₹${deliveryCharge}`}</span>
                 </div>
 
-                <div className="border-t pt-3">
-                  <div className="flex justify-between text-lg font-bold">
-                    <span>Total</span>
-                    <span>₹{finalTotal}</span>
-                  </div>
+                <div className="flex justify-between border-t pt-3 text-lg font-black">
+                  <span>Total Payable</span>
+                  <span>₹{finalTotal}</span>
                 </div>
-
-                <p className="text-xs text-gray-500">
-                  Free delivery above ₹299. Order before 9 PM for next morning
-                  delivery.
-                </p>
-
-                {hasUnavailableItems && (
-                  <p className="rounded bg-red-50 p-2 text-xs font-semibold text-red-600">
-                    Remove unavailable products before checkout.
-                  </p>
-                )}
-
-                {hasStockLimitIssues && (
-                  <p className="rounded bg-orange-50 p-2 text-xs font-semibold text-orange-700">
-                    Some item quantities are higher than available stock. Please
-                    reduce quantity before checkout.
-                  </p>
-                )}
-
-                {availableCartItems.length === 0 && (
-                  <p className="rounded bg-red-50 p-2 text-xs font-semibold text-red-600">
-                    No available product in cart.
-                  </p>
-                )}
-
-                {canCheckout ? (
-                  <Link
-                    href="/checkout"
-                    className="block w-full rounded bg-[#15803d] py-3 text-center font-bold text-white hover:bg-[#166534]"
-                  >
-                    PROCEED TO CHECKOUT
-                  </Link>
-                ) : (
-                  <button
-                    disabled
-                    className="block w-full cursor-not-allowed rounded bg-gray-400 py-3 text-center font-bold text-white"
-                  >
-                    PROCEED TO CHECKOUT
-                  </button>
-                )}
               </div>
+
+              {hasUnavailableItems && (
+                <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
+                  Remove out-of-stock or coming-soon items before checkout.
+                </div>
+              )}
+
+              {hasUnavailableItems ? (
+                <button
+                  type="button"
+                  disabled
+                  className="mt-6 block w-full cursor-not-allowed rounded bg-gray-400 px-6 py-3 text-center font-black text-white"
+                >
+                  Checkout Disabled
+                </button>
+              ) : (
+                <Link
+                  href="/checkout"
+                  className="mt-6 block rounded bg-[#7a1e13] px-6 py-3 text-center font-black text-white hover:bg-[#5f160e]"
+                >
+                  Proceed to Checkout
+                </Link>
+              )}
+
+              <Link
+                href="/"
+                className="mt-3 block rounded border border-[#7a1e13] px-6 py-3 text-center font-black text-[#7a1e13]"
+              >
+                Continue Shopping
+              </Link>
             </aside>
           </div>
         )}
@@ -422,3 +333,4 @@ export default function CartPage() {
     </main>
   );
 }
+

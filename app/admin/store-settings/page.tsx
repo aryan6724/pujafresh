@@ -187,6 +187,8 @@ export default function AdminStoreSettingsPage() {
       storeName: formData.storeName.trim(),
       storeEmail: formData.storeEmail.trim(),
       storePhone: formData.storePhone.trim(),
+      supportEmail: formData.storeEmail.trim(),
+      supportPhone: formData.storePhone.trim(),
       storeAddress: formData.storeAddress.trim(),
       minimumOrderValue: Number(formData.minimumOrderValue || 0),
       deliveryCharge: Number(formData.deliveryCharge || 0),

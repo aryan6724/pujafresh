@@ -14,6 +14,7 @@ type OrderItem = {
   slug?: string;
   badge?: string;
   description?: string;
+  image?: string;
 };
 
 type Order = {
@@ -65,6 +66,7 @@ type Order = {
 };
 
 const ORDERS_STORAGE_KEY = "pujafresh-orders";
+const LAST_ORDER_STORAGE_KEY = "pujafresh-last-order";
 
 const formatCurrency = (amount?: number) => {
   return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
@@ -73,7 +75,11 @@ const formatCurrency = (amount?: number) => {
 const formatDateTime = (date?: string) => {
   if (!date) return "N/A";
 
-  return new Date(date).toLocaleString("en-IN", {
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) return "N/A";
+
+  return parsedDate.toLocaleString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -104,7 +110,11 @@ const getCustomKitItems = (item: OrderItem) => {
 const formatDate = (date?: string) => {
   if (!date) return "N/A";
 
-  return new Date(date).toLocaleDateString("en-IN", {
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) return date;
+
+  return parsedDate.toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -146,6 +156,35 @@ const readOrders = () => {
   }
 };
 
+const readLastOrder = () => {
+  try {
+    const savedOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
+
+    if (!savedOrder) return null;
+
+    return JSON.parse(savedOrder) as Order;
+  } catch {
+    return null;
+  }
+};
+
+const getPaymentStatus = (order: Order) => {
+  if (order.paymentStatus) return order.paymentStatus;
+
+  if (
+    order.customer?.paymentMethod === "UPI QR Payment" ||
+    order.customer?.paymentMethod === "Bank Transfer"
+  ) {
+    return "Verification Pending";
+  }
+
+  return "Payment Pending";
+};
+
+const getPaymentReference = (order: Order) => {
+  return order.paymentReference?.trim() || "Not provided";
+};
+
 export default function InvoicePage() {
   const [orderIdInput, setOrderIdInput] = useState("");
   const [phoneInput, setPhoneInput] = useState("");
@@ -161,6 +200,14 @@ export default function InvoicePage() {
       setOrderIdInput(orderId);
       setPhoneInput(phone);
       findOrder(orderId, phone, false);
+      return;
+    }
+
+    const lastOrder = readLastOrder();
+
+    if (lastOrder) {
+      setOrder(lastOrder);
+      setOrderIdInput(lastOrder.id);
     }
   }, []);
 
@@ -175,10 +222,17 @@ export default function InvoicePage() {
 
   const subtotal = order?.subtotal ?? calculatedSubtotal;
   const deliveryCharge = Number(order?.deliveryCharge || 0);
-  const discountAmount = Number(order?.discountAmount || 0);
+  const discountAmount = Number(
+    order?.coupon?.discountAmount ?? order?.discountAmount ?? 0
+  );
+  const deliveryDiscount = Number(order?.coupon?.deliveryDiscount || 0);
   const loyaltyDiscount = Number(order?.loyalty?.redemptionAmount || 0);
   const total =
-    order?.total ?? Math.max(subtotal + deliveryCharge - discountAmount - loyaltyDiscount, 0);
+    order?.total ??
+    Math.max(
+      subtotal + deliveryCharge - discountAmount - deliveryDiscount - loyaltyDiscount,
+      0
+    );
 
   const findOrder = (
     orderIdValue = orderIdInput,
@@ -194,8 +248,13 @@ export default function InvoicePage() {
     }
 
     const orders = readOrders();
+    const lastOrder = readLastOrder();
 
-    const matchedOrder = orders.find((savedOrder) => {
+    const allOrders = lastOrder
+      ? [lastOrder, ...orders.filter((savedOrder) => savedOrder.id !== lastOrder.id)]
+      : orders;
+
+    const matchedOrder = allOrders.find((savedOrder) => {
       const matchesOrderId =
         savedOrder.id.toLowerCase() === orderId.toLowerCase();
 
@@ -331,7 +390,7 @@ export default function InvoicePage() {
               href="/track-order"
               className="mt-5 inline-block rounded border border-[#7a1e13] px-5 py-3 font-bold text-[#7a1e13] hover:bg-[#7a1e13] hover:text-white"
             >
-              Track Order
+              Back to Orders
             </Link>
           </div>
         )}
@@ -354,10 +413,10 @@ export default function InvoicePage() {
               </button>
 
               <Link
-                href={`/track-order`}
+                href="/orders"
                 className="rounded border border-[#7a1e13] px-5 py-3 text-sm font-bold text-[#7a1e13] hover:bg-[#7a1e13] hover:text-white"
               >
-                Track Order
+                Back to Orders
               </Link>
             </div>
 
@@ -430,11 +489,15 @@ export default function InvoicePage() {
                   </p>
                   <p>
                     <span className="font-bold">Payment Status:</span>{" "}
-                    {order.paymentStatus || "N/A"}
+                    {getPaymentStatus(order)}
                   </p>
                   <p>
                     <span className="font-bold">Payment Method:</span>{" "}
                     {order.customer?.paymentMethod || "N/A"}
+                  </p>
+                  <p>
+                    <span className="font-bold">Payment Reference:</span>{" "}
+                    {getPaymentReference(order)}
                   </p>
                   <p>
                     <span className="font-bold">Delivery Date:</span>{" "}
@@ -544,14 +607,25 @@ export default function InvoicePage() {
                     </span>
                   </div>
 
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">
-                      Loyalty Redemption
-                    </span>
-                    <span className="font-bold text-green-700">
-                      - {formatCurrency(loyaltyDiscount)}
-                    </span>
-                  </div>
+                  {deliveryDiscount > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Delivery Coupon</span>
+                      <span className="font-bold text-green-700">
+                        - {formatCurrency(deliveryDiscount)}
+                      </span>
+                    </div>
+                  )}
+
+                  {loyaltyDiscount > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">
+                        Loyalty Redemption
+                      </span>
+                      <span className="font-bold text-green-700">
+                        - {formatCurrency(loyaltyDiscount)}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="border-t pt-3">
                     <div className="flex justify-between text-lg">

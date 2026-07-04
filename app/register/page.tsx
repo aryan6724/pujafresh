@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
@@ -11,44 +10,55 @@ export default function RegisterPage() {
   const router = useRouter();
   const { register } = useAuth();
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
     phone: "",
     password: "",
-    confirmPassword: "",
   });
 
-  const handleRegister = (event: FormEvent) => {
+  const handleChange = (field: keyof typeof formData, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (
-      !formData.fullName ||
-      !formData.email ||
-      !formData.phone ||
-      !formData.password ||
-      !formData.confirmPassword
-    ) {
-      toast.error("Please fill all details");
+    if (!formData.fullName.trim()) {
+      toast.error("Please enter your full name");
       return;
     }
 
-    if (formData.password.length < 6) {
-      toast.error("Password must be at least 6 characters");
+    if (!formData.email.trim()) {
+      toast.error("Please enter your email");
       return;
     }
 
-    if (formData.password !== formData.confirmPassword) {
-      toast.error("Passwords do not match");
+    if (!formData.password.trim()) {
+      toast.error("Please enter your password");
       return;
     }
 
-    const result = register({
+    if (formData.password.length < 8) {
+      toast.error("Password must be at least 8 characters long");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const result = await register({
       fullName: formData.fullName,
       email: formData.email,
       phone: formData.phone,
       password: formData.password,
     });
+
+    setIsSubmitting(false);
 
     if (!result.success) {
       toast.error(result.message);
@@ -56,126 +66,106 @@ export default function RegisterPage() {
     }
 
     toast.success(result.message);
-    router.push("/profile");
+    router.push("/login?registered=true");
   };
 
   return (
     <main className="min-h-screen bg-[#f7f3ea]">
       <Navbar />
 
-      <section className="mx-auto flex max-w-md items-center px-4 py-10">
-        <div className="w-full rounded-xl bg-white p-8 shadow-sm">
-          <h1 className="text-center text-3xl font-bold text-[#7a1e13]">
+      <section className="mx-auto flex min-h-[calc(100vh-90px)] max-w-7xl items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-sm">
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-[#7a1e13]">
             Create Account
-          </h1>
-
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Register to manage orders, wishlist and profile.
           </p>
 
-          <form onSubmit={handleRegister} className="mt-8 space-y-4">
+          <h1 className="mt-3 text-3xl font-black text-gray-900">
+            Join PujaFresh
+          </h1>
+
+          <p className="mt-2 text-sm text-gray-600">
+            Create your account to manage orders, addresses, rewards and pooja
+            subscriptions.
+          </p>
+
+          <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
             <div>
-              <label className="text-sm font-semibold text-gray-700">
+              <label className="text-sm font-bold text-gray-700">
                 Full Name
               </label>
+
               <input
+                type="text"
                 value={formData.fullName}
                 onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    fullName: event.target.value,
-                  }))
+                  handleChange("fullName", event.target.value)
                 }
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 outline-none focus:border-[#7a1e13]"
-                placeholder="Enter full name"
+                className="mt-1 w-full rounded border border-gray-300 px-4 py-3 outline-none focus:border-[#7a1e13]"
+                placeholder="Aryan Sharma"
+                required
               />
             </div>
 
             <div>
-              <label className="text-sm font-semibold text-gray-700">
-                Email
-              </label>
+              <label className="text-sm font-bold text-gray-700">Email</label>
+
               <input
                 type="email"
                 value={formData.email}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    email: event.target.value,
-                  }))
-                }
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 outline-none focus:border-[#7a1e13]"
-                placeholder="Enter email"
+                onChange={(event) => handleChange("email", event.target.value)}
+                className="mt-1 w-full rounded border border-gray-300 px-4 py-3 outline-none focus:border-[#7a1e13]"
+                placeholder="you@example.com"
+                required
               />
             </div>
 
             <div>
-              <label className="text-sm font-semibold text-gray-700">
-                Phone
+              <label className="text-sm font-bold text-gray-700">
+                Phone Number
               </label>
+
               <input
+                type="tel"
                 value={formData.phone}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    phone: event.target.value,
-                  }))
-                }
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 outline-none focus:border-[#7a1e13]"
-                placeholder="Enter phone number"
+                onChange={(event) => handleChange("phone", event.target.value)}
+                className="mt-1 w-full rounded border border-gray-300 px-4 py-3 outline-none focus:border-[#7a1e13]"
+                placeholder="9999999999"
               />
             </div>
 
             <div>
-              <label className="text-sm font-semibold text-gray-700">
+              <label className="text-sm font-bold text-gray-700">
                 Password
               </label>
+
               <input
                 type="password"
                 value={formData.password}
                 onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    password: event.target.value,
-                  }))
+                  handleChange("password", event.target.value)
                 }
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 outline-none focus:border-[#7a1e13]"
-                placeholder="Minimum 6 characters"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-semibold text-gray-700">
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                value={formData.confirmPassword}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    confirmPassword: event.target.value,
-                  }))
-                }
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 outline-none focus:border-[#7a1e13]"
-                placeholder="Confirm password"
+                className="mt-1 w-full rounded border border-gray-300 px-4 py-3 outline-none focus:border-[#7a1e13]"
+                placeholder="Minimum 8 characters"
+                required
               />
             </div>
 
             <button
               type="submit"
-              className="w-full rounded bg-[#7a1e13] py-3 font-bold text-white hover:bg-[#64180f]"
+              disabled={isSubmitting}
+              className="rounded bg-[#7a1e13] px-5 py-3 font-bold text-white hover:bg-[#64180f] disabled:cursor-not-allowed disabled:opacity-70"
             >
-              REGISTER
+              {isSubmitting ? "Creating account..." : "Create Account"}
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-gray-600">
-            Already have an account?{" "}
-            <Link href="/login" className="font-bold text-[#7a1e13]">
-              Login
-            </Link>
-          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/login")}
+            className="mt-5 w-full text-center text-sm font-bold text-[#7a1e13]"
+          >
+            Already have an account? Login
+          </button>
         </div>
       </section>
     </main>

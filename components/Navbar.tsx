@@ -2,10 +2,13 @@
 
 import { ChangeEvent, useState } from "react";
 import Link from "next/link";
+import { signOut, useSession } from "next-auth/react";
 import {
+  Bell,
   Gift,
   Heart,
   HelpCircle,
+  LogOut,
   Menu,
   MessageCircle,
   Package,
@@ -16,21 +19,35 @@ import {
 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
-import { useAuth } from "@/context/AuthContext";
 
 type NavbarProps = {
   searchValue?: string;
   onSearchChange?: (value: string) => void;
 };
 
+type SessionUser = {
+  name?: string | null;
+  email?: string | null;
+  fullName?: string | null;
+  role?: string | null;
+};
+
 export default function Navbar({ searchValue, onSearchChange }: NavbarProps) {
   const { cartCount } = useCart();
   const { wishlistCount } = useWishlist();
-  const { user, isLoggedIn } = useAuth();
+  const { data: session, status } = useSession();
 
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const firstName = user?.fullName?.split(" ")[0] || "Account";
+  const sessionUser = session?.user as SessionUser | undefined;
+  const isLoggedIn = status === "authenticated" && !!sessionUser;
+  const firstName =
+    sessionUser?.fullName?.split(" ")[0] ||
+    sessionUser?.name?.split(" ")[0] ||
+    sessionUser?.email?.split("@")[0] ||
+    "Account";
+
+  const userRole = sessionUser?.role || "CUSTOMER";
 
   const searchInputProps =
     searchValue !== undefined
@@ -43,6 +60,11 @@ export default function Navbar({ searchValue, onSearchChange }: NavbarProps) {
 
   const closeMenu = () => {
     setMenuOpen(false);
+  };
+
+  const handleLogout = async () => {
+    closeMenu();
+    await signOut({ callbackUrl: "/" });
   };
 
   return (
@@ -101,7 +123,30 @@ export default function Navbar({ searchValue, onSearchChange }: NavbarProps) {
             </Link>
           )}
 
-          {isLoggedIn ? (
+          {isLoggedIn && (
+            <Link
+              href="/notifications"
+              className="hidden items-center gap-1 rounded px-2 py-1 hover:bg-white/10 lg:flex"
+            >
+              <Bell size={18} />
+              Alerts
+            </Link>
+          )}
+
+          <Link
+            href="/coupons"
+            className="hidden items-center gap-1 rounded px-2 py-1 hover:bg-white/10 xl:flex"
+          >
+            <Gift size={18} />
+            Coupons
+          </Link>
+
+          {status === "loading" ? (
+            <span className="hidden items-center gap-1 rounded px-2 py-1 text-orange-100 md:flex">
+              <User size={18} />
+              Loading...
+            </span>
+          ) : isLoggedIn ? (
             <Link
               href="/profile"
               className="hidden items-center gap-1 rounded px-2 py-1 hover:bg-white/10 md:flex"
@@ -154,6 +199,17 @@ export default function Navbar({ searchValue, onSearchChange }: NavbarProps) {
               </span>
             )}
           </Link>
+
+          {isLoggedIn && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="hidden items-center gap-1 rounded border border-white px-3 py-2 text-sm font-bold text-white hover:bg-white hover:text-[#7a1e13] md:flex"
+            >
+              <LogOut size={18} />
+              Logout
+            </button>
+          )}
         </nav>
       </div>
 
@@ -172,24 +228,57 @@ export default function Navbar({ searchValue, onSearchChange }: NavbarProps) {
       {menuOpen && (
         <div className="border-t border-white/15 px-4 pb-4 md:hidden">
           <nav className="grid gap-2 text-sm font-bold">
-            {isLoggedIn ? (
-              <Link
-                href="/profile"
-                onClick={closeMenu}
-                className="flex items-center gap-2 rounded bg-white/10 px-4 py-3"
-              >
+            {status === "loading" ? (
+              <div className="flex items-center gap-2 rounded bg-white/10 px-4 py-3">
                 <User size={18} />
-                My Profile
-              </Link>
+                Loading...
+              </div>
+            ) : isLoggedIn ? (
+              <>
+                <Link
+                  href="/profile"
+                  onClick={closeMenu}
+                  className="flex items-center justify-between rounded bg-white/10 px-4 py-3"
+                >
+                  <span className="flex items-center gap-2">
+                    <User size={18} />
+                    {firstName}
+                  </span>
+
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-black text-[#7a1e13]">
+                    {userRole}
+                  </span>
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 rounded bg-white px-4 py-3 text-left font-bold text-[#7a1e13]"
+                >
+                  <LogOut size={18} />
+                  Logout
+                </button>
+              </>
             ) : (
-              <Link
-                href="/login"
-                onClick={closeMenu}
-                className="flex items-center gap-2 rounded bg-white/10 px-4 py-3"
-              >
-                <User size={18} />
-                Login
-              </Link>
+              <>
+                <Link
+                  href="/login"
+                  onClick={closeMenu}
+                  className="flex items-center gap-2 rounded bg-white/10 px-4 py-3"
+                >
+                  <User size={18} />
+                  Login
+                </Link>
+
+                <Link
+                  href="/register"
+                  onClick={closeMenu}
+                  className="flex items-center gap-2 rounded bg-white px-4 py-3 text-[#7a1e13]"
+                >
+                  <User size={18} />
+                  Register
+                </Link>
+              </>
             )}
 
             <Link
@@ -228,6 +317,26 @@ export default function Navbar({ searchValue, onSearchChange }: NavbarProps) {
                 My Rewards
               </Link>
             )}
+
+            {isLoggedIn && (
+              <Link
+                href="/notifications"
+                onClick={closeMenu}
+                className="flex items-center gap-2 rounded bg-white/10 px-4 py-3"
+              >
+                <Bell size={18} />
+                Notifications
+              </Link>
+            )}
+
+            <Link
+              href="/coupons"
+              onClick={closeMenu}
+              className="flex items-center gap-2 rounded bg-white/10 px-4 py-3"
+            >
+              <Gift size={18} />
+              Coupons
+            </Link>
 
             <Link
               href="/faq"

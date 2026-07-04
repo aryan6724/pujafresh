@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
+import { addCustomerNotification } from "@/utils/customerNotificationStorage";
 
 type LoyaltyTransaction = {
   id: string;
@@ -41,6 +42,10 @@ const filterOptions = [
   "High Points",
   "Repeat Customers",
 ];
+
+const dispatchLoyaltyUpdated = () => {
+  window.dispatchEvent(new Event("pujafresh-loyalty-updated"));
+};
 
 export default function AdminLoyaltyPage() {
   const router = useRouter();
@@ -81,6 +86,7 @@ export default function AdminLoyaltyPage() {
   const saveCustomers = (updatedCustomers: CustomerLoyalty[]) => {
     setCustomers(updatedCustomers);
     localStorage.setItem(LOYALTY_POINTS_KEY, JSON.stringify(updatedCustomers));
+    dispatchLoyaltyUpdated();
   };
 
   const filteredCustomers = useMemo(() => {
@@ -227,6 +233,20 @@ export default function AdminLoyaltyPage() {
     );
 
     saveCustomers(updatedCustomers);
+
+    addCustomerNotification({
+      customerEmail: customer.customerEmail,
+      customerPhone: customer.customerPhone,
+      type: "Loyalty",
+      priority: "High",
+      title: "Loyalty points updated",
+      message:
+        actualPointChange > 0
+          ? `${Math.abs(actualPointChange)} loyalty point(s) added. Reason: ${reason}`
+          : `${Math.abs(actualPointChange)} loyalty point(s) removed. Reason: ${reason}`,
+      actionHref: "/loyalty",
+    });
+
     toast.success("Loyalty points updated");
   };
 

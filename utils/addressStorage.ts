@@ -20,19 +20,39 @@ export type CustomerAddress = {
 
 export const CUSTOMER_ADDRESSES_STORAGE_KEY = "pujafresh-customer-addresses";
 
-const normalizeEmail = (email?: string) => {
-  return email?.trim().toLowerCase() || "";
-};
+const normalizeEmail = (email?: string) => email?.trim().toLowerCase() || "";
+const normalizePhone = (phone?: string) => phone?.replace(/\D/g, "") || "";
 
-const normalizePhone = (phone?: string) => {
-  return phone?.replace(/\D/g, "") || "";
+const emitAddressUpdate = () => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("pujafresh-addresses-updated"));
 };
 
 export const createAddressId = () => {
   return `ADDR-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 };
 
-export function getAllCustomerAddresses() {
+const normalizeAddress = (address: Partial<CustomerAddress>): CustomerAddress => {
+  return {
+    id: String(address.id || createAddressId()),
+    customerEmail: normalizeEmail(address.customerEmail),
+    customerPhone: normalizePhone(address.customerPhone),
+    label: address.label || "Home",
+    fullName: String(address.fullName || ""),
+    phone: normalizePhone(address.phone),
+    addressLine1: String(address.addressLine1 || ""),
+    addressLine2: address.addressLine2 || "",
+    landmark: address.landmark || "",
+    city: String(address.city || "Delhi"),
+    state: String(address.state || "Delhi"),
+    pincode: String(address.pincode || ""),
+    isDefault: Boolean(address.isDefault),
+    createdAt: address.createdAt || new Date().toISOString(),
+    updatedAt: address.updatedAt,
+  };
+};
+
+export function getAllCustomerAddresses(): CustomerAddress[] {
   if (typeof window === "undefined") return [];
 
   const savedAddresses = localStorage.getItem(CUSTOMER_ADDRESSES_STORAGE_KEY);
@@ -40,9 +60,9 @@ export function getAllCustomerAddresses() {
   if (!savedAddresses) return [];
 
   try {
-    const parsedAddresses = JSON.parse(savedAddresses) as CustomerAddress[];
+    const parsedAddresses = JSON.parse(savedAddresses) as Partial<CustomerAddress>[];
 
-    if (Array.isArray(parsedAddresses)) return parsedAddresses;
+    if (Array.isArray(parsedAddresses)) return parsedAddresses.map(normalizeAddress);
 
     return [];
   } catch {
@@ -51,7 +71,14 @@ export function getAllCustomerAddresses() {
 }
 
 export function saveAllCustomerAddresses(addresses: CustomerAddress[]) {
-  localStorage.setItem(CUSTOMER_ADDRESSES_STORAGE_KEY, JSON.stringify(addresses));
+  if (typeof window === "undefined") return;
+
+  localStorage.setItem(
+    CUSTOMER_ADDRESSES_STORAGE_KEY,
+    JSON.stringify(addresses.map(normalizeAddress))
+  );
+
+  emitAddressUpdate();
 }
 
 export function getCustomerAddresses(customerEmail?: string, customerPhone?: string) {
@@ -111,19 +138,21 @@ export function addCustomerAddress(
       ? {
           ...savedAddress,
           isDefault: false,
+          updatedAt: now,
         }
       : savedAddress;
   });
 
-  const newAddress: CustomerAddress = {
+  const newAddress: CustomerAddress = normalizeAddress({
     ...address,
     id: createAddressId(),
     customerEmail: email || address.customerEmail,
     customerPhone: normalizePhone(address.customerPhone),
+    phone: normalizePhone(address.phone),
     isDefault: shouldSetDefault,
     createdAt: now,
     updatedAt: now,
-  };
+  });
 
   saveAllCustomerAddresses([newAddress, ...updatedAddresses]);
 
@@ -154,20 +183,22 @@ export function updateCustomerAddress(
       (phone && addressPhone && phone === addressPhone);
 
     if (address.id === addressId) {
-      return {
+      return normalizeAddress({
         ...address,
         ...updatedAddress,
         customerEmail: email || updatedAddress.customerEmail,
         customerPhone: normalizePhone(updatedAddress.customerPhone),
+        phone: normalizePhone(updatedAddress.phone),
         isDefault: shouldSetDefault,
         updatedAt: now,
-      };
+      });
     }
 
     if (shouldSetDefault && belongsToSameCustomer) {
       return {
         ...address,
         isDefault: false,
+        updatedAt: now,
       };
     }
 
@@ -220,6 +251,7 @@ export function setDefaultCustomerAddress(
 ) {
   const email = normalizeEmail(customerEmail);
   const phone = normalizePhone(customerPhone);
+  const now = new Date().toISOString();
 
   const updatedAddresses = getAllCustomerAddresses().map((address) => {
     const addressEmail = normalizeEmail(address.customerEmail);
@@ -234,8 +266,7 @@ export function setDefaultCustomerAddress(
     return {
       ...address,
       isDefault: address.id === addressId,
-      updatedAt:
-        address.id === addressId ? new Date().toISOString() : address.updatedAt,
+      updatedAt: address.id === addressId ? now : address.updatedAt,
     };
   });
 

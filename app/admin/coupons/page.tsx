@@ -39,6 +39,10 @@ const emptyForm: CouponFormData = {
 const statusOptions = ["All Coupons", "Active", "Inactive", "Expired"];
 const typeOptions: CouponType[] = ["Percentage", "Fixed Amount", "Free Delivery"];
 
+const dispatchCouponsUpdated = () => {
+  window.dispatchEvent(new Event("pujafresh-coupons-updated"));
+};
+
 export default function AdminCouponsPage() {
   const router = useRouter();
 
@@ -65,6 +69,7 @@ export default function AdminCouponsPage() {
   const saveCouponList = (updatedCoupons: Coupon[]) => {
     setCoupons(updatedCoupons);
     saveCoupons(updatedCoupons);
+    dispatchCouponsUpdated();
   };
 
   const stats = useMemo(() => {
@@ -306,6 +311,7 @@ export default function AdminCouponsPage() {
 
     const defaultCouponList = resetCouponsToDefault();
     setCoupons(defaultCouponList);
+    dispatchCouponsUpdated();
     clearForm();
     toast.success("Coupons reset to default");
   };

@@ -6,12 +6,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
-import { Product } from "@/types";
-import { getProducts, saveProducts } from "@/utils/productStorage";
 import {
   addOrderStatusNotification,
   addPaymentStatusNotification,
 } from "@/utils/customerNotificationStorage";
+
+type Product = {
+  id: number | string;
+  name: string;
+  slug: string;
+  price: number;
+  mrp?: number;
+  image?: string;
+  category?: string;
+  badge?: string;
+  stock?: string;
+  stockQuantity?: number;
+  delivery?: string;
+  description?: string;
+};
 
 type OrderItem = Product & {
   quantity: number;
@@ -19,7 +32,7 @@ type OrderItem = Product & {
 
 type InventoryHistoryLog = {
   id: string;
-  productId: number;
+  productId: number | string;
   productSlug: string;
   productName: string;
   productImage: string;
@@ -112,6 +125,28 @@ const paymentStatuses = [
   "Refunded",
 ];
 
+const getSafeImage = (image?: string) => {
+  if (image && image.trim().length > 0) return image;
+  return "/premium-pooja-pack.jpg";
+};
+
+const normalizeAdminProduct = (item: any, index: number): Product => {
+  return {
+    id: item.id || index + 1,
+    name: item.name || "Product",
+    slug: item.slug || `product-${index + 1}`,
+    price: Number(item.price || 0),
+    mrp: Number(item.mrp || item.price || 0),
+    image: item.image || "/premium-pooja-pack.jpg",
+    category: item.category || "Pooja Essentials",
+    badge: item.badge || "Fresh",
+    stock: item.stock || "In Stock",
+    stockQuantity: Number(item.stockQuantity ?? 999),
+    delivery: item.delivery || "Early Morning Delivery",
+    description: item.description || "",
+  };
+};
+
 const getOrderDeliverySlot = (order: Order) => {
   return (
     order.customer?.deliverySlotDetails?.label ||
@@ -196,7 +231,30 @@ export default function AdminPage() {
       setOrders(JSON.parse(savedOrders));
     }
 
-    setProducts(getProducts());
+    const loadDatabaseProducts = async () => {
+      try {
+        const response = await fetch("/api/products", {
+          cache: "no-store",
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.ok && Array.isArray(data.products)) {
+          const databaseProducts = data.products.map(
+            (item: any, index: number) => normalizeAdminProduct(item, index)
+          );
+
+          setProducts(databaseProducts);
+          return;
+        }
+
+        setProducts([]);
+      } catch {
+        setProducts([]);
+      }
+    };
+
+    loadDatabaseProducts();
 
     const savedInventoryHistory = localStorage.getItem(
       "pujafresh-inventory-history"
@@ -400,11 +458,10 @@ export default function AdminPage() {
   };
 
   const restoreStockForCancelledOrder = (order: Order) => {
-    const latestProductList = getProducts();
     const historyLogs: InventoryHistoryLog[] = [];
     const now = new Date().toISOString();
 
-    const updatedProducts = latestProductList.map((product) => {
+    const updatedProducts = products.map((product) => {
       const orderedItem = order.items.find(
         (item) => item.id === product.id || item.slug === product.slug
       );
@@ -428,8 +485,8 @@ export default function AdminPage() {
         productId: product.id,
         productSlug: product.slug,
         productName: product.name,
-        productImage: product.image,
-        productCategory: product.category,
+        productImage: getSafeImage(product.image),
+        productCategory: product.category || "Pooja Essentials",
         changeType: "Stock Restored",
         quantityChange: orderedItem.quantity,
         previousStock: currentStockQuantity,
@@ -447,7 +504,27 @@ export default function AdminPage() {
       };
     });
 
-    saveProducts(updatedProducts);
+    if (historyLogs.length === 0) {
+      order.items.forEach((item) => {
+        historyLogs.push({
+          id: `INV-${Date.now()}-${item.id || item.slug}`,
+          productId: item.id || item.slug || "unknown",
+          productSlug: item.slug || "unknown-product",
+          productName: item.name,
+          productImage: getSafeImage(item.image),
+          productCategory: item.category || "Pooja Essentials",
+          changeType: "Stock Restored",
+          quantityChange: item.quantity,
+          previousStock: 0,
+          updatedStock: item.quantity,
+          reason: "Order cancelled by admin",
+          orderId: order.id,
+          createdAt: now,
+          updatedBy: "Admin",
+        });
+      });
+    }
+
     saveInventoryHistoryLogs(historyLogs);
     setProducts(updatedProducts);
     setInventoryHistoryLogs((prevLogs) => [...historyLogs, ...prevLogs]);
@@ -1127,7 +1204,7 @@ export default function AdminPage() {
                     <div className="flex gap-3">
                       <div className="relative h-14 w-14 overflow-hidden rounded bg-[#fff7ed]">
                         <Image
-                          src={product.image || "/basic-pooja-pack.jpg"}
+                          src={getSafeImage(product.image)}
                           alt={product.name}
                           fill
                           className="object-cover"
@@ -1209,7 +1286,7 @@ export default function AdminPage() {
                   <div className="flex items-center gap-3">
                     <div className="relative h-12 w-12 overflow-hidden rounded bg-[#fff7ed]">
                       <Image
-                        src={log.productImage || "/basic-pooja-pack.jpg"}
+                        src={getSafeImage(log.productImage)}
                         alt={log.productName}
                         fill
                         className="object-cover"
@@ -1550,7 +1627,7 @@ export default function AdminPage() {
                             >
                               <div className="relative h-16 w-16 overflow-hidden rounded bg-white">
                                 <Image
-                                  src={item.image}
+                                  src={getSafeImage(item.image)}
                                   alt={item.name}
                                   fill
                                   className="object-cover"

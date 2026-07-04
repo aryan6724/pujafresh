@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
+import { addSupportReplyNotification, addSupportStatusNotification } from "@/utils/customerNotificationStorage";
 
 type SupportTicket = {
   id: string;
@@ -37,6 +38,10 @@ const categoryOptions = [
   "Other",
 ];
 
+const dispatchSupportTicketsUpdated = () => {
+  window.dispatchEvent(new Event("pujafresh-support-tickets-updated"));
+};
+
 export default function AdminSupportPage() {
   const router = useRouter();
 
@@ -57,6 +62,14 @@ export default function AdminSupportPage() {
 
     loadTickets();
     setIsCheckingAuth(false);
+
+    window.addEventListener("storage", loadTickets);
+    window.addEventListener("pujafresh-support-tickets-updated", loadTickets);
+
+    return () => {
+      window.removeEventListener("storage", loadTickets);
+      window.removeEventListener("pujafresh-support-tickets-updated", loadTickets);
+    };
   }, [router]);
 
   const loadTickets = () => {
@@ -70,9 +83,7 @@ export default function AdminSupportPage() {
     try {
       const parsedTickets = JSON.parse(savedTickets) as SupportTicket[];
 
-      if (Array.isArray(parsedTickets)) {
-        setTickets(parsedTickets);
-      }
+      setTickets(Array.isArray(parsedTickets) ? parsedTickets : []);
     } catch {
       setTickets([]);
     }
@@ -81,6 +92,7 @@ export default function AdminSupportPage() {
   const saveTickets = (updatedTickets: SupportTicket[]) => {
     setTickets(updatedTickets);
     localStorage.setItem(SUPPORT_TICKETS_KEY, JSON.stringify(updatedTickets));
+    dispatchSupportTicketsUpdated();
   };
 
   const filteredTickets = useMemo(() => {
@@ -143,7 +155,19 @@ export default function AdminSupportPage() {
         : ticket
     );
 
+    const updatedTicket = updatedTickets.find((ticket) => ticket.id === ticketId);
+
     saveTickets(updatedTickets);
+
+    if (updatedTicket) {
+      addSupportStatusNotification({
+        customerEmail: updatedTicket.customerEmail,
+        customerPhone: updatedTicket.customerPhone,
+        ticketId: updatedTicket.id,
+        status,
+      });
+    }
+
     toast.success(`Ticket marked as ${status}`);
   };
 
@@ -166,7 +190,19 @@ export default function AdminSupportPage() {
         : item
     );
 
+    const updatedTicket = updatedTickets.find((item) => item.id === ticket.id);
+
     saveTickets(updatedTickets);
+
+    if (updatedTicket) {
+      addSupportReplyNotification({
+        customerEmail: updatedTicket.customerEmail,
+        customerPhone: updatedTicket.customerPhone,
+        ticketId: updatedTicket.id,
+        replyPreview: reply.trim().slice(0, 100),
+      });
+    }
+
     toast.success("Reply saved successfully");
   };
 
@@ -292,6 +328,13 @@ export default function AdminSupportPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <button
+              onClick={loadTickets}
+              className="rounded bg-[#15803d] px-5 py-3 text-sm font-bold text-white hover:bg-[#166534]"
+            >
+              Refresh
+            </button>
+
             <Link
               href="/admin"
               className="rounded border border-[#7a1e13] px-5 py-3 text-sm font-bold text-[#7a1e13] hover:bg-[#7a1e13] hover:text-white"

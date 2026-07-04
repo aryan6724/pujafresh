@@ -3,11 +3,30 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
-import { Product } from "@/types";
+import { addOrderStatusNotification } from "@/utils/customerNotificationStorage";
+
+type Product = {
+  id?: number | string;
+  name: string;
+  slug?: string;
+  price: number;
+  image?: string;
+  category?: string;
+  badge?: string;
+  description?: string;
+};
 
 type OrderItem = Product & {
   quantity: number;
+};
+
+type StatusHistory = {
+  status: string;
+  message: string;
+  updatedAt: string;
+  updatedBy: string;
 };
 
 type Order = {
@@ -44,6 +63,33 @@ type Order = {
   paymentReference?: string;
   status: string;
   createdAt: string;
+  statusHistory?: StatusHistory[];
+};
+
+const ORDERS_STORAGE_KEY = "pujafresh-orders";
+const LAST_ORDER_STORAGE_KEY = "pujafresh-last-order";
+
+const readOrders = () => {
+  try {
+    const savedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
+    const lastOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
+
+    const parsedOrders = savedOrders
+      ? (JSON.parse(savedOrders) as Order[])
+      : [];
+
+    const orders = Array.isArray(parsedOrders) ? parsedOrders : [];
+
+    if (!lastOrder) return orders;
+
+    const parsedLastOrder = JSON.parse(lastOrder) as Order;
+
+    const existsInOrders = orders.some((order) => order.id === parsedLastOrder.id);
+
+    return existsInOrders ? orders : [parsedLastOrder, ...orders];
+  } catch {
+    return [];
+  }
 };
 
 const getTodayDate = () => {
@@ -103,6 +149,7 @@ const getStatusBadgeStyle = (status: string) => {
   if (status === "Out for Delivery") return "bg-indigo-50 text-indigo-700";
   if (status === "Delivered") return "bg-green-50 text-green-700";
   if (status === "Cancelled") return "bg-red-50 text-red-700";
+  if (status === "Delivery Failed") return "bg-red-50 text-red-700";
   if (status === "Archived") return "bg-gray-100 text-gray-700";
 
   return "bg-gray-100 text-gray-700";
@@ -143,15 +190,7 @@ export default function DeliveryListPage() {
       return;
     }
 
-    const savedOrders = localStorage.getItem("pujafresh-orders");
-
-    if (savedOrders) {
-      try {
-        setOrders(JSON.parse(savedOrders) as Order[]);
-      } catch {
-        setOrders([]);
-      }
-    }
+    setOrders(readOrders());
 
     setIsCheckingAuth(false);
   }, [router]);
@@ -220,6 +259,70 @@ export default function DeliveryListPage() {
       pendingPayments,
     };
   }, [deliveryOrders]);
+
+  const saveOrders = (updatedOrders: Order[]) => {
+    setOrders(updatedOrders);
+    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(updatedOrders));
+
+    const lastOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
+
+    if (!lastOrder) return;
+
+    try {
+      const parsedLastOrder = JSON.parse(lastOrder) as Order;
+      const updatedLastOrder = updatedOrders.find(
+        (order) => order.id === parsedLastOrder.id
+      );
+
+      if (updatedLastOrder) {
+        localStorage.setItem(
+          LAST_ORDER_STORAGE_KEY,
+          JSON.stringify(updatedLastOrder)
+        );
+      }
+    } catch {
+      // Ignore invalid last order data.
+    }
+  };
+
+  const getDeliveryStatusMessage = (status: string) => {
+    if (status === "Out for Delivery") return "Order is out for delivery.";
+    if (status === "Delivered") return "Order delivered successfully.";
+    if (status === "Delivery Failed") return "Delivery attempt failed.";
+    return "Delivery status updated.";
+  };
+
+  const updateDeliveryStatus = (orderId: string, status: string) => {
+    const now = new Date().toISOString();
+
+    const updatedOrders = orders.map((order) => {
+      if (order.id !== orderId) return order;
+
+      return {
+        ...order,
+        status,
+        statusHistory: [
+          ...(order.statusHistory || []),
+          {
+            status,
+            message: getDeliveryStatusMessage(status),
+            updatedAt: now,
+            updatedBy: "Admin",
+          },
+        ],
+      };
+    });
+
+    saveOrders(updatedOrders);
+
+    const updatedOrder = updatedOrders.find((order) => order.id === orderId);
+
+    if (updatedOrder) {
+      addOrderStatusNotification(updatedOrder, status, "Admin");
+    }
+
+    toast.success(`Order marked as ${status}`);
+  };
 
   const handlePrint = () => {
     window.print();
@@ -480,14 +583,39 @@ export default function DeliveryListPage() {
                             </td>
 
                             <td className="border-b px-4 py-4 print:hidden">
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  className="h-5 w-5 accent-[#7a1e13]"
-                                />
-                                <span className="text-xs font-semibold text-gray-600">
+                              <div className="flex flex-col gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateDeliveryStatus(order.id, "Out for Delivery")
+                                  }
+                                  disabled={order.status === "Out for Delivery"}
+                                  className="rounded bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                                >
+                                  Out
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateDeliveryStatus(order.id, "Delivered")
+                                  }
+                                  disabled={order.status === "Delivered"}
+                                  className="rounded bg-green-700 px-3 py-2 text-xs font-bold text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:bg-gray-400"
+                                >
                                   Delivered
-                                </span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateDeliveryStatus(order.id, "Delivery Failed")
+                                  }
+                                  disabled={order.status === "Delivery Failed"}
+                                  className="rounded bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                                >
+                                  Failed
+                                </button>
                               </div>
                             </td>
                           </tr>

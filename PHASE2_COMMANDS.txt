@@ -1,0 +1,30 @@
+# PujaFresh Phase 2 Commands
+
+# 1. Install Auth.js / NextAuth package
+npm install next-auth@beta
+
+# 2. Generate auth secret
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+
+# 3. Paste the generated secret in .env:
+# AUTH_SECRET="..."
+# NEXTAUTH_SECRET="..."
+# NEXTAUTH_URL="http://localhost:3000"
+
+# 4. Add/replace the files from this pack:
+# auth.ts
+# types/next-auth.d.ts
+# app/api/auth/[...nextauth]/route.ts
+# app/api/register/route.ts
+# app/api/me/route.ts
+# app/login/page.tsx
+# app/register/page.tsx
+# lib/require-auth.ts
+
+# 5. Restart dev server
+npm run dev
+
+# 6. Test routes:
+# http://localhost:3000/register
+# http://localhost:3000/login
+# http://localhost:3000/api/me

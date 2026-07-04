@@ -6,15 +6,94 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
-import { Product } from "@/types";
-import {
-  createUniqueSlug,
-  getProducts,
-  productCategories,
-  resetProductsToDefault,
-  saveProducts,
-  stockOptions,
-} from "@/utils/productStorage";
+
+type Product = {
+  id: number | string;
+  name: string;
+  slug: string;
+  category: string;
+  price: number;
+  mrp: number;
+  rating: number;
+  reviews: number;
+  image: string;
+  badge: string;
+  delivery: string;
+  stock: string;
+  stockQuantity?: number;
+  description?: string;
+};
+
+const productCategories = [
+  "Daily Pooja Packs",
+  "Fresh Flowers",
+  "Pooja Samagri",
+  "Festival Kits",
+  "Murtis & Idols",
+  "Custom Kit",
+];
+
+const stockOptions = [
+  "In Stock",
+  "Limited Stock",
+  "Out of Stock",
+  "Coming Soon",
+];
+
+const createSlug = (name: string) => {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)+/g, "");
+};
+
+const createUniqueSlug = (
+  name: string,
+  products: Product[],
+  editingProductId?: number | string | null
+) => {
+  const baseSlug = createSlug(name);
+  let slug = baseSlug;
+  let counter = 1;
+
+  while (
+    products.some(
+      (product) =>
+        product.slug === slug &&
+        String(product.id) !== String(editingProductId || "")
+    )
+  ) {
+    slug = `${baseSlug}-${counter}`;
+    counter += 1;
+  }
+
+  return slug;
+};
+
+const getSafeImage = (image?: string) => {
+  if (image && image.trim().length > 0) return image;
+  return "/premium-pooja-pack.jpg";
+};
+
+const normalizeProduct = (item: any, index: number): Product => {
+  return {
+    id: item.id || index + 1,
+    name: item.name || "Product",
+    slug: item.slug || createSlug(item.name || `product-${index + 1}`),
+    category: item.category || "Daily Pooja Packs",
+    price: Number(item.price || 0),
+    mrp: Number(item.mrp || item.price || 0),
+    rating: Number(item.rating || 4.5),
+    reviews: Number(item.reviews || 0),
+    image: item.image || "/premium-pooja-pack.jpg",
+    badge: item.badge || "New",
+    delivery: item.delivery || "Next Morning Delivery",
+    stock: item.stock || "In Stock",
+    stockQuantity: Number(item.stockQuantity ?? 20),
+    description: item.description || "",
+  };
+};
 
 type ProductFormData = {
   name: string;
@@ -32,7 +111,7 @@ type ProductFormData = {
 
 type InventoryHistoryLog = {
   id: string;
-  productId: number;
+  productId: number | string;
   productSlug: string;
   productName: string;
   productImage: string;
@@ -54,7 +133,7 @@ const emptyForm: ProductFormData = {
   mrp: "",
   rating: "4.5",
   reviews: "0",
-  image: "/basic-pooja-pack.jpg",
+  image: "/premium-pooja-pack.jpg",
   badge: "New",
   delivery: "Next Morning Delivery",
   stock: "In Stock",
@@ -82,11 +161,35 @@ export default function AdminProductsPage() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [formData, setFormData] = useState<ProductFormData>(emptyForm);
-  const [editingProductId, setEditingProductId] = useState<number | null>(null);
+  const [editingProductId, setEditingProductId] = useState<number | string | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [stockFilter, setStockFilter] = useState("All Products");
+
+  const loadProducts = async () => {
+    try {
+      const response = await fetch("/api/products", {
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.ok && Array.isArray(data.products)) {
+        setProducts(
+          data.products.map((product: any, index: number) =>
+            normalizeProduct(product, index)
+          )
+        );
+        return;
+      }
+
+      setProducts([]);
+    } catch {
+      setProducts([]);
+      toast.error("Unable to load database products");
+    }
+  };
 
   useEffect(() => {
     const isAdminLoggedIn = localStorage.getItem("pujafresh-admin-auth");
@@ -96,8 +199,9 @@ export default function AdminProductsPage() {
       return;
     }
 
-    setProducts(getProducts());
-    setIsCheckingAuth(false);
+    loadProducts().finally(() => {
+      setIsCheckingAuth(false);
+    });
   }, [router]);
 
   const stats = useMemo(() => {
@@ -207,7 +311,7 @@ export default function AdminProductsPage() {
     setShowForm(false);
   };
 
-  const handleSaveProduct = (event: FormEvent) => {
+  const handleSaveProduct = async (event: FormEvent) => {
     event.preventDefault();
 
     if (
@@ -250,65 +354,7 @@ export default function AdminProductsPage() {
 
     const slug = createUniqueSlug(formData.name, products, editingProductId);
 
-    if (editingProductId) {
-      const existingProduct = products.find(
-        (product) => product.id === editingProductId
-      );
-
-      const previousStockQuantity = existingProduct
-        ? getProductStockQuantity(existingProduct)
-        : 0;
-
-      const updatedProducts = products.map((product) =>
-        product.id === editingProductId
-          ? {
-              ...product,
-              name: formData.name,
-              slug,
-              category: formData.category,
-              price,
-              mrp,
-              rating,
-              reviews,
-              image: formData.image,
-              badge: formData.badge,
-              delivery: formData.delivery,
-              stock: formData.stock,
-              stockQuantity: finalStockQuantity,
-            }
-          : product
-      );
-
-      setProducts(updatedProducts);
-      saveProducts(updatedProducts);
-
-      if (existingProduct && previousStockQuantity !== finalStockQuantity) {
-        saveInventoryHistoryLogs([
-          {
-            id: `INV-${Date.now()}-${editingProductId}`,
-            productId: editingProductId,
-            productSlug: slug,
-            productName: formData.name,
-            productImage: formData.image,
-            productCategory: formData.category,
-            changeType: "Manual Update",
-            quantityChange: finalStockQuantity - previousStockQuantity,
-            previousStock: previousStockQuantity,
-            updatedStock: finalStockQuantity,
-            reason: "Manual stock update by admin",
-            createdAt: new Date().toISOString(),
-            updatedBy: "Admin",
-          },
-        ]);
-      }
-
-      toast.success("Product updated successfully");
-      clearForm();
-      return;
-    }
-
-    const newProduct: Product = {
-      id: Date.now(),
+    const payload = {
       name: formData.name,
       slug,
       category: formData.category,
@@ -321,35 +367,66 @@ export default function AdminProductsPage() {
       delivery: formData.delivery,
       stock: formData.stock,
       stockQuantity: finalStockQuantity,
+      description: "",
     };
 
-    const updatedProducts = [newProduct, ...products];
-
-    setProducts(updatedProducts);
-    saveProducts(updatedProducts);
-
-    if (finalStockQuantity > 0) {
-      saveInventoryHistoryLogs([
+    try {
+      const response = await fetch(
+        editingProductId
+          ? `/api/admin/products/${encodeURIComponent(String(editingProductId))}`
+          : "/api/admin/products",
         {
-          id: `INV-${Date.now()}-${newProduct.id}`,
-          productId: newProduct.id,
-          productSlug: newProduct.slug,
-          productName: newProduct.name,
-          productImage: newProduct.image,
-          productCategory: newProduct.category,
-          changeType: "Manual Update",
-          quantityChange: finalStockQuantity,
-          previousStock: 0,
-          updatedStock: finalStockQuantity,
-          reason: "New product stock added by admin",
-          createdAt: new Date().toISOString(),
-          updatedBy: "Admin",
-        },
-      ]);
-    }
+          method: editingProductId ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
 
-    toast.success("Product added successfully");
-    clearForm();
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        toast.error(data.message || "Unable to save product");
+        return;
+      }
+
+      const existingProduct = editingProductId
+        ? products.find((product) => String(product.id) === String(editingProductId))
+        : null;
+
+      const previousStockQuantity = existingProduct
+        ? getProductStockQuantity(existingProduct)
+        : 0;
+
+      if (previousStockQuantity !== finalStockQuantity) {
+        saveInventoryHistoryLogs([
+          {
+            id: `INV-${Date.now()}-${editingProductId || data.product?.id || slug}`,
+            productId: editingProductId || data.product?.id || slug,
+            productSlug: slug,
+            productName: formData.name,
+            productImage: formData.image,
+            productCategory: formData.category,
+            changeType: "Manual Update",
+            quantityChange: finalStockQuantity - previousStockQuantity,
+            previousStock: previousStockQuantity,
+            updatedStock: finalStockQuantity,
+            reason: editingProductId
+              ? "Manual stock update by admin"
+              : "New product stock added by admin",
+            createdAt: new Date().toISOString(),
+            updatedBy: "Admin",
+          },
+        ]);
+      }
+
+      await loadProducts();
+      toast.success(editingProductId ? "Product updated successfully" : "Product added successfully");
+      clearForm();
+    } catch {
+      toast.error("Unable to save product");
+    }
   };
 
   const handleEditProduct = (product: Product) => {
@@ -381,7 +458,7 @@ export default function AdminProductsPage() {
     });
   };
 
-  const handleQuickStockUpdate = (product: Product, quantityChange: number) => {
+  const handleQuickStockUpdate = async (product: Product, quantityChange: number) => {
     const previousStockQuantity = getProductStockQuantity(product);
     const updatedStockQuantity = Math.max(
       previousStockQuantity + quantityChange,
@@ -401,59 +478,85 @@ export default function AdminProductsPage() {
         ? "Limited Stock"
         : "In Stock";
 
-    const updatedProducts = products.map((item) =>
-      item.id === product.id
-        ? {
-            ...item,
+    try {
+      const response = await fetch(
+        `/api/admin/products/${encodeURIComponent(String(product.id))}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
             stockQuantity: updatedStockQuantity,
             stock: updatedStock,
-          }
-        : item
-    );
+          }),
+        }
+      );
 
-    setProducts(updatedProducts);
-    saveProducts(updatedProducts);
+      const data = await response.json();
 
-    saveInventoryHistoryLogs([
-      {
-        id: `INV-${Date.now()}-${product.id}`,
-        productId: product.id,
-        productSlug: product.slug,
-        productName: product.name,
-        productImage: product.image,
-        productCategory: product.category,
-        changeType: "Manual Update",
-        quantityChange: finalQuantityChange,
-        previousStock: previousStockQuantity,
-        updatedStock: updatedStockQuantity,
-        reason:
-          finalQuantityChange > 0
-            ? "Quick stock increase by admin"
-            : "Quick stock decrease by admin",
-        createdAt: new Date().toISOString(),
-        updatedBy: "Admin",
-      },
-    ]);
+      if (!response.ok || !data.ok) {
+        toast.error(data.message || "Unable to update stock");
+        return;
+      }
 
-    toast.success(
-      `Stock updated from ${previousStockQuantity} to ${updatedStockQuantity}`
-    );
+      saveInventoryHistoryLogs([
+        {
+          id: `INV-${Date.now()}-${product.id}`,
+          productId: product.id,
+          productSlug: product.slug,
+          productName: product.name,
+          productImage: product.image,
+          productCategory: product.category,
+          changeType: "Manual Update",
+          quantityChange: finalQuantityChange,
+          previousStock: previousStockQuantity,
+          updatedStock: updatedStockQuantity,
+          reason:
+            finalQuantityChange > 0
+              ? "Quick stock increase by admin"
+              : "Quick stock decrease by admin",
+          createdAt: new Date().toISOString(),
+          updatedBy: "Admin",
+        },
+      ]);
+
+      await loadProducts();
+      toast.success(
+        `Stock updated from ${previousStockQuantity} to ${updatedStockQuantity}`
+      );
+    } catch {
+      toast.error("Unable to update stock");
+    }
   };
 
-  const handleDeleteProduct = (productId: number) => {
+  const handleDeleteProduct = async (productId: number | string) => {
     const confirmDelete = window.confirm(
       "Are you sure you want to delete this product?"
     );
 
     if (!confirmDelete) return;
 
-    const updatedProducts = products.filter(
-      (product) => product.id !== productId
-    );
+    try {
+      const response = await fetch(
+        `/api/admin/products/${encodeURIComponent(String(productId))}`,
+        {
+          method: "DELETE",
+        }
+      );
 
-    setProducts(updatedProducts);
-    saveProducts(updatedProducts);
-    toast.success("Product deleted successfully");
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        toast.error(data.message || "Unable to delete product");
+        return;
+      }
+
+      await loadProducts();
+      toast.success("Product deleted successfully");
+    } catch {
+      toast.error("Unable to delete product");
+    }
   };
 
   const handleExportCurrentInventory = () => {
@@ -510,17 +613,7 @@ export default function AdminProductsPage() {
   };
 
   const handleResetProducts = () => {
-    const confirmReset = window.confirm(
-      "Are you sure you want to reset all products to default?"
-    );
-
-    if (!confirmReset) return;
-
-    const defaultProductList = resetProductsToDefault();
-
-    setProducts(defaultProductList);
-    clearForm();
-    toast.success("Products reset to default");
+    toast.error("Default reset is disabled after database migration. Use the seed script if you want to reset database products.");
   };
 
   const handleLogout = () => {
@@ -672,7 +765,7 @@ export default function AdminProductsPage() {
                 </h2>
                 <p className="mt-1 text-sm text-gray-600">
                   Use image path from public folder, example:
-                  /basic-pooja-pack.jpg
+                  /premium-pooja-pack.jpg
                 </p>
               </div>
 
@@ -830,7 +923,7 @@ export default function AdminProductsPage() {
                   value={formData.image}
                   onChange={handleChange}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 outline-none focus:border-[#7a1e13]"
-                  placeholder="/basic-pooja-pack.jpg"
+                  placeholder="/premium-pooja-pack.jpg"
                 />
               </div>
 
@@ -953,7 +1046,7 @@ export default function AdminProductsPage() {
                 >
                   <div className="relative h-20 w-20 overflow-hidden rounded bg-[#fff7ed]">
                     <Image
-                      src={product.image || "/basic-pooja-pack.jpg"}
+                      src={getSafeImage(product.image)}
                       alt={product.name}
                       fill
                       className="object-cover"

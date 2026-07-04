@@ -6,7 +6,6 @@ import CategoryBar from "@/components/categoryBar";
 import Navbar from "@/components/Navbar";
 import ProductCard from "@/components/ProductCard";
 import { Product } from "@/types";
-import { getProducts } from "@/utils/productStorage";
 
 type HomeClientProps = {
   products: Product[];
@@ -27,18 +26,100 @@ const sortOptions: SortOption[] = [
   "Discount High to Low",
 ];
 
+// Only these are the main store/project products.
+// Custom-kit internal items like Kumkum, Diya Set, Agarbatti Pack etc. will NOT show here.
+const STOREFRONT_PRODUCT_SLUGS = [
+  "fresh-rose-petals",
+  "premium-daily-pooja-pack",
+  "small-ganesh-ji-murti",
+  "complete-navratri-kit",
+  "kapoor-dhoop-combo",
+  "fresh-genda-flowers",
+  "basic-daily-pooja-pack",
+];
+
+const normalizeProduct = (item: any, index: number): Product => {
+  const image = item.image || "/premium-pooja-pack.jpg";
+
+  return {
+    id: index + 1,
+    name: item.name || "",
+    slug: item.slug || "",
+    description: item.description || "",
+    price: Number(item.price || 0),
+    mrp: Number(item.mrp || item.price || 0),
+    image,
+    badge: item.badge || "Fresh",
+    category: item.category || "Pooja Essentials",
+    rating: Number(item.rating || 4.8),
+    reviews: Number(item.reviews || 0),
+    stock: item.stock || "In Stock",
+    stockQuantity: Number(item.stockQuantity || 0),
+    delivery: item.delivery || "Early Morning Delivery",
+    material: item.material || item.unit || "pack",
+  } as Product;
+};
+
+const sortStorefrontProducts = (products: Product[]) => {
+  return [...products].sort((a, b) => {
+    return (
+      STOREFRONT_PRODUCT_SLUGS.indexOf(a.slug) -
+      STOREFRONT_PRODUCT_SLUGS.indexOf(b.slug)
+    );
+  });
+};
+
 export default function HomeClient({ products }: HomeClientProps) {
-  const [allProducts, setAllProducts] = useState<Product[]>(products);
+  const fallbackProducts = (products || []).filter((product) =>
+    STOREFRONT_PRODUCT_SLUGS.includes(product.slug)
+  );
+
+  const [allProducts, setAllProducts] = useState<Product[]>(
+    sortStorefrontProducts(fallbackProducts)
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [sortBy, setSortBy] = useState<SortOption>("Newest");
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [productError, setProductError] = useState("");
+
   const productsSectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    setAllProducts(getProducts());
+    const fetchDatabaseProducts = async () => {
+      try {
+        setIsLoadingProducts(true);
+        setProductError("");
+
+        const response = await fetch("/api/products", {
+          cache: "no-store",
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Unable to fetch products");
+        }
+
+        const databaseProducts = (data.products || [])
+          .filter((item: any) => STOREFRONT_PRODUCT_SLUGS.includes(item.slug))
+          .map((item: any, index: number) => normalizeProduct(item, index));
+
+        setAllProducts(sortStorefrontProducts(databaseProducts));
+      } catch (error) {
+        console.error("Home products fetch error:", error);
+        setProductError("Database products could not be loaded.");
+        setAllProducts(sortStorefrontProducts(fallbackProducts));
+      } finally {
+        setIsLoadingProducts(false);
+      }
+    };
+
+    fetchDatabaseProducts();
   }, []);
 
   const getDiscountPercentage = (product: Product) => {
+    if (!product.mrp || product.mrp <= product.price) return 0;
     return Math.round(((product.mrp - product.price) / product.mrp) * 100);
   };
 
@@ -63,7 +144,12 @@ export default function HomeClient({ products }: HomeClientProps) {
     const sorted = [...filtered];
 
     if (sortBy === "Newest") {
-      sorted.sort((a, b) => b.id - a.id);
+      sorted.sort((a, b) => {
+        return (
+          STOREFRONT_PRODUCT_SLUGS.indexOf(a.slug) -
+          STOREFRONT_PRODUCT_SLUGS.indexOf(b.slug)
+        );
+      });
     }
 
     if (sortBy === "Price Low to High") {
@@ -162,12 +248,18 @@ export default function HomeClient({ products }: HomeClientProps) {
             </h2>
 
             <p className="text-sm text-gray-600">
-              {searchTerm || selectedCategory !== "All" || sortBy !== "Newest"
-                ? `${filteredProducts.length} product${
+              {isLoadingProducts
+                ? "Loading products from database..."
+                : `${filteredProducts.length} product${
                     filteredProducts.length !== 1 ? "s" : ""
-                  } found`
-                : "Fresh, affordable and delivered early morning."}
+                  } found`}
             </p>
+
+            {productError && (
+              <p className="mt-1 text-sm font-bold text-red-600">
+                {productError}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -205,8 +297,7 @@ export default function HomeClient({ products }: HomeClientProps) {
             </h3>
 
             <p className="mt-2 text-gray-600">
-              Try searching for genda, kapoor, murti, navratri, flowers, or
-              select another category.
+              Try another search term or category.
             </p>
 
             <button
@@ -219,7 +310,7 @@ export default function HomeClient({ products }: HomeClientProps) {
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {filteredProducts.map((product) => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard key={`${product.slug}-${product.id}`} product={product} />
             ))}
           </div>
         )}

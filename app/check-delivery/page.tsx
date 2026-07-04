@@ -8,21 +8,30 @@ import {
   DeliveryArea,
   findDeliveryAreaByPincode,
   getDeliveryAreas,
-} from "@/utils/deliveryAreaStorage";
+} from "@/utils/pincodeStorage";
+import { DeliverySlot, getDeliverySlots } from "@/utils/deliverySlotStorage";
 
 export default function CheckDeliveryPage() {
   const [pincode, setPincode] = useState("");
   const [areas, setAreas] = useState<DeliveryArea[]>([]);
+  const [slots, setSlots] = useState<DeliverySlot[]>([]);
   const [matchedArea, setMatchedArea] = useState<DeliveryArea | null>(null);
   const [hasChecked, setHasChecked] = useState(false);
 
   useEffect(() => {
     setAreas(getDeliveryAreas());
+    setSlots(getDeliverySlots());
   }, []);
 
   const activeAreas = useMemo(() => {
     return areas.filter((area) => area.isActive);
   }, [areas]);
+
+  const activeSlots = useMemo(() => {
+    return slots
+      .filter((slot) => slot.isActive)
+      .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  }, [slots]);
 
   const popularAreas = useMemo(() => {
     return activeAreas.slice(0, 6);
@@ -179,16 +188,20 @@ export default function CheckDeliveryPage() {
                   </p>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {matchedArea.slots
-                      .filter((slot) => slot.isActive)
-                      .map((slot) => (
+                    {activeSlots.length === 0 ? (
+                      <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
+                        No active slot available
+                      </span>
+                    ) : (
+                      activeSlots.map((slot) => (
                         <span
                           key={slot.id}
                           className="rounded-full bg-[#fff7ed] px-3 py-1 text-xs font-bold text-[#7a1e13]"
                         >
                           {slot.label}: {slot.timeRange}
                         </span>
-                      ))}
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -241,7 +254,7 @@ export default function CheckDeliveryPage() {
             </h2>
 
             <p className="mt-2 text-sm text-gray-600">
-              Quick check using available demo pincodes.
+              Quick check using available service pincodes.
             </p>
 
             <div className="mt-5 grid gap-3">
@@ -266,6 +279,11 @@ export default function CheckDeliveryPage() {
                         <p className="mt-1 text-sm text-gray-600">
                           {area.city} - {area.pincode}
                         </p>
+
+                        <p className="mt-1 text-xs font-semibold text-gray-500">
+                          Min order ₹{area.minOrderValue} • Free above ₹
+                          {area.freeDeliveryAbove}
+                        </p>
                       </div>
 
                       <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
@@ -285,8 +303,8 @@ export default function CheckDeliveryPage() {
           </h2>
 
           <p className="mt-2 text-gray-600">
-            Admin can add service areas, delivery charges, minimum order value
-            and active slots from the delivery area panel.
+            Admin can add service areas from Delivery Areas and delivery slots
+            from Delivery Slots. This page reads the same saved data.
           </p>
         </div>
       </section>

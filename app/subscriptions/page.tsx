@@ -61,6 +61,14 @@ const statusFilters = [
   "Completed",
 ];
 
+const normalizeEmail = (email?: string) => {
+  return email?.trim().toLowerCase() || "";
+};
+
+const normalizePhone = (phone?: string) => {
+  return phone?.replace(/\D/g, "") || "";
+};
+
 const formatCurrency = (amount?: number) => {
   return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
 };
@@ -104,15 +112,31 @@ export default function SubscriptionsPage() {
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const customerEmail = user?.email;
-  const customerPhone = (user as any)?.phone;
+  const customerEmail = normalizeEmail(user?.email);
+  const customerPhone = normalizePhone((user as any)?.phone);
 
   const loadSubscriptions = () => {
     setSubscriptions(getCustomerSubscriptions(customerEmail, customerPhone));
   };
 
   useEffect(() => {
-    setProducts(getProducts());
+    const loadProducts = async () => {
+      try {
+        const response = await fetch("/api/products", { cache: "no-store" });
+        const data = await response.json();
+
+        if (response.ok && data.ok && Array.isArray(data.products)) {
+          setProducts(data.products);
+          return;
+        }
+
+        setProducts(getProducts());
+      } catch {
+        setProducts(getProducts());
+      }
+    };
+
+    loadProducts();
   }, []);
 
   useEffect(() => {
@@ -137,7 +161,7 @@ export default function SubscriptionsPage() {
     }));
 
     loadSubscriptions();
-  }, [user]);
+  }, [user, customerEmail, customerPhone]);
 
   const subscriptionProducts = useMemo(() => {
     return products.filter(
@@ -289,6 +313,7 @@ export default function SubscriptionsPage() {
       status: "Pending Approval",
     });
 
+    window.dispatchEvent(new Event("pujafresh-subscriptions-updated"));
     toast.success("Subscription request created");
     setFormData({
       ...defaultFormData,
@@ -306,6 +331,7 @@ export default function SubscriptionsPage() {
       "Customer",
       "Subscription paused by customer."
     );
+    window.dispatchEvent(new Event("pujafresh-subscriptions-updated"));
     loadSubscriptions();
     toast.success("Subscription paused");
   };
@@ -317,6 +343,7 @@ export default function SubscriptionsPage() {
       "Customer",
       "Subscription resumed by customer."
     );
+    window.dispatchEvent(new Event("pujafresh-subscriptions-updated"));
     loadSubscriptions();
     toast.success("Subscription resumed");
   };
@@ -332,6 +359,7 @@ export default function SubscriptionsPage() {
       "Customer",
       "Subscription cancelled by customer."
     );
+    window.dispatchEvent(new Event("pujafresh-subscriptions-updated"));
     loadSubscriptions();
     toast.success("Subscription cancelled");
   };

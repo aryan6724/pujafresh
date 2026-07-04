@@ -5,7 +5,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
-import { Product } from "@/types";
+import {
+  addPaymentStatusNotification,
+  addReturnRefundStatusNotification,
+} from "@/utils/customerNotificationStorage";
+
+type Product = {
+  id?: number | string;
+  name: string;
+  slug?: string;
+  price: number;
+  image?: string;
+  category?: string;
+  badge?: string;
+  description?: string;
+};
 
 type OrderItem = Product & {
   quantity: number;
@@ -58,6 +72,7 @@ type Order = {
 };
 
 const ORDERS_STORAGE_KEY = "pujafresh-orders";
+const LAST_ORDER_STORAGE_KEY = "pujafresh-last-order";
 
 const statusOptions = [
   "All Requests",
@@ -92,19 +107,28 @@ export default function AdminReturnRefundPage() {
   }, [router]);
 
   const loadOrders = () => {
-    const savedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
-
-    if (!savedOrders) {
-      setOrders([]);
-      return;
-    }
-
     try {
-      const parsedOrders = JSON.parse(savedOrders) as Order[];
+      const savedOrders = localStorage.getItem(ORDERS_STORAGE_KEY);
+      const lastOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
 
-      if (Array.isArray(parsedOrders)) {
-        setOrders(parsedOrders);
+      const parsedOrders = savedOrders
+        ? (JSON.parse(savedOrders) as Order[])
+        : [];
+
+      const orders = Array.isArray(parsedOrders) ? parsedOrders : [];
+
+      if (!lastOrder) {
+        setOrders(orders);
+        return;
       }
+
+      const parsedLastOrder = JSON.parse(lastOrder) as Order;
+
+      const existsInOrders = orders.some(
+        (order) => order.id === parsedLastOrder.id
+      );
+
+      setOrders(existsInOrders ? orders : [parsedLastOrder, ...orders]);
     } catch {
       setOrders([]);
     }
@@ -278,6 +302,7 @@ export default function AdminReturnRefundPage() {
     const updatedOrder: Order = {
       ...order,
       refundRequest: updatedRequest,
+      paymentStatus: status === "Refunded" ? "Refunded" : order.paymentStatus,
       statusHistory: [
         ...(order.statusHistory || []),
         {
@@ -292,6 +317,19 @@ export default function AdminReturnRefundPage() {
     };
 
     saveUpdatedOrder(updatedOrder);
+
+    addReturnRefundStatusNotification(updatedOrder, status);
+
+    if (status === "Refunded") {
+      addPaymentStatusNotification(
+        {
+          ...updatedOrder,
+          paymentStatus: "Refunded",
+        },
+        "Refunded"
+      );
+    }
+
     toast.success(`Request marked as ${status}`);
   };
 
@@ -698,6 +736,7 @@ export default function AdminReturnRefundPage() {
               })}
             </div>
           )}
+          
         </div>
       </section>
     </main>

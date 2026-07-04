@@ -47,6 +47,18 @@ type Order = {
   status?: string;
   createdAt?: string;
   deliveredAt?: string;
+  refundRequest?: {
+    id: string;
+    type: "Return" | "Refund" | "Replacement";
+    reason: string;
+    description?: string;
+    status: "Requested" | "Approved" | "Rejected" | "Refunded" | "Completed";
+    requestedAt: string;
+    updatedAt?: string;
+    updatedBy?: string;
+    adminNote?: string;
+    refundAmount?: number;
+  } | null;
 };
 
 type LoyaltyLog = {
@@ -76,6 +88,7 @@ type SupportTicket = {
 };
 
 const ORDERS_STORAGE_KEY = "pujafresh-orders";
+const LAST_ORDER_STORAGE_KEY = "pujafresh-last-order";
 const LOYALTY_STORAGE_KEY = "pujafresh-loyalty-points";
 const SUPPORT_STORAGE_KEY = "pujafresh-support-tickets";
 
@@ -101,6 +114,23 @@ const readJsonArray = <T,>(key: string): T[] => {
     return Array.isArray(parsedValue) ? parsedValue : [];
   } catch {
     return [];
+  }
+};
+
+const readOrdersWithLastOrder = () => {
+  const orders = readJsonArray<Order>(ORDERS_STORAGE_KEY);
+
+  try {
+    const savedLastOrder = localStorage.getItem(LAST_ORDER_STORAGE_KEY);
+
+    if (!savedLastOrder) return orders;
+
+    const lastOrder = JSON.parse(savedLastOrder) as Order;
+    const existsInOrders = orders.some((order) => order.id === lastOrder.id);
+
+    return existsInOrders ? orders : [lastOrder, ...orders];
+  } catch {
+    return orders;
   }
 };
 
@@ -195,7 +225,7 @@ export default function ProfilePage() {
       return;
     }
 
-    const allOrders = readJsonArray<Order>(ORDERS_STORAGE_KEY);
+    const allOrders = readOrdersWithLastOrder();
     const matchedOrders = allOrders.filter((order) => {
       const orderEmail = getOrderCustomerEmail(order);
       const orderPhone = getOrderCustomerPhone(order);
@@ -549,6 +579,21 @@ export default function ProfilePage() {
                               className="rounded border border-green-700 px-3 py-2 text-xs font-bold text-green-700 hover:bg-green-700 hover:text-white"
                             >
                               Feedback
+                            </Link>
+                          )}
+
+                          {order.status === "Delivered" && (
+                            <Link
+                              href={`/return-refund?orderId=${encodeURIComponent(
+                                order.id
+                              )}`}
+                              className={`rounded px-3 py-2 text-xs font-bold ${
+                                order.refundRequest
+                                  ? "border border-orange-700 text-orange-700 hover:bg-orange-700 hover:text-white"
+                                  : "border border-purple-700 text-purple-700 hover:bg-purple-700 hover:text-white"
+                              }`}
+                            >
+                              {order.refundRequest ? "Request Status" : "Return/Refund"}
                             </Link>
                           )}
                         </div>

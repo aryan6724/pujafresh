@@ -68,8 +68,8 @@ export default function AddressesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [labelFilter, setLabelFilter] = useState("All Labels");
 
-  const customerEmail = user?.email;
-  const customerPhone = (user as any)?.phone;
+  const customerEmail = user?.email?.trim().toLowerCase();
+  const customerPhone = normalizePhone((user as any)?.phone);
 
   const loadAddresses = () => {
     if (!customerEmail && !customerPhone) {
@@ -82,6 +82,18 @@ export default function AddressesPage() {
 
   useEffect(() => {
     loadAddresses();
+
+    const handleAddressUpdate = () => {
+      loadAddresses();
+    };
+
+    window.addEventListener("storage", handleAddressUpdate);
+    window.addEventListener("pujafresh-addresses-updated", handleAddressUpdate);
+
+    return () => {
+      window.removeEventListener("storage", handleAddressUpdate);
+      window.removeEventListener("pujafresh-addresses-updated", handleAddressUpdate);
+    };
   }, [customerEmail, customerPhone]);
 
   useEffect(() => {
@@ -212,9 +224,11 @@ export default function AddressesPage() {
 
     if (editingAddressId) {
       updateCustomerAddress(editingAddressId, payload);
+      window.dispatchEvent(new Event("pujafresh-addresses-updated"));
       toast.success("Address updated successfully");
     } else {
       addCustomerAddress(payload);
+      window.dispatchEvent(new Event("pujafresh-addresses-updated"));
       toast.success("Address added successfully");
     }
 
@@ -246,12 +260,14 @@ export default function AddressesPage() {
     if (!confirmDelete) return;
 
     deleteCustomerAddress(addressId);
+    window.dispatchEvent(new Event("pujafresh-addresses-updated"));
     loadAddresses();
     toast.success("Address deleted");
   };
 
   const handleSetDefault = (addressId: string) => {
     setDefaultCustomerAddress(addressId, customerEmail, customerPhone);
+    window.dispatchEvent(new Event("pujafresh-addresses-updated"));
     loadAddresses();
     toast.success("Default address updated");
   };

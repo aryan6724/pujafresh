@@ -1,0 +1,7 @@
+# Add these lines to your existing .env file.
+
+# Generate a secret with:
+# node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+AUTH_SECRET="dnEeUw7XPm8A22OAUc+57wlFlDe3bbjP1tCWN5wRs3A="
+NEXTAUTH_SECRET="dnEeUw7XPm8A22OAUc+57wlFlDe3bbjP1tCWN5wRs3A="
+NEXTAUTH_URL="http://localhost:3000"

@@ -11,14 +11,30 @@ export default function FAQPage() {
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
   const [openFaqId, setOpenFaqId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadFaqs = () => {
     setFaqs(getFaqs());
+  };
+
+  useEffect(() => {
+    loadFaqs();
+
+    const handleFaqUpdate = () => {
+      loadFaqs();
+    };
+
+    window.addEventListener("storage", handleFaqUpdate);
+    window.addEventListener("pujafresh-faqs-updated", handleFaqUpdate);
+
+    return () => {
+      window.removeEventListener("storage", handleFaqUpdate);
+      window.removeEventListener("pujafresh-faqs-updated", handleFaqUpdate);
+    };
   }, []);
 
   const activeFaqs = useMemo(() => {
     return faqs
       .filter((faq) => faq.isActive)
-      .sort((a, b) => a.sortOrder - b.sortOrder);
+      .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   }, [faqs]);
 
   const featuredFaqs = useMemo(() => {
@@ -45,6 +61,7 @@ export default function FAQPage() {
   const clearFilters = () => {
     setSearchQuery("");
     setCategoryFilter("All Categories");
+    setOpenFaqId(null);
   };
 
   const toggleFaq = (faqId: string) => {

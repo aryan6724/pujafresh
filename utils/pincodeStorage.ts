@@ -16,6 +16,8 @@ export type DeliveryArea = {
 
 export const DELIVERY_AREAS_STORAGE_KEY = "pujafresh-delivery-areas";
 
+const getNow = () => new Date().toISOString();
+
 const createDefaultArea = (
   pincode: string,
   areaName: string,
@@ -24,6 +26,8 @@ const createDefaultArea = (
   freeDeliveryAbove = 499,
   minOrderValue = 149
 ): DeliveryArea => {
+  const now = getNow();
+
   return {
     id: `area-${pincode}`,
     pincode,
@@ -36,7 +40,8 @@ const createDefaultArea = (
     estimatedDelivery: "Next morning",
     expressAvailable: true,
     isActive: true,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   };
 };
 
@@ -53,27 +58,36 @@ const normalizeDeliveryArea = (area: Partial<DeliveryArea>): DeliveryArea => {
     (defaultArea) => defaultArea.pincode === area.pincode
   );
 
+  const now = getNow();
+  const pincode = String(area.pincode || fallback?.pincode || "").trim();
+
   return {
-    id: area.id || `area-${area.pincode || Date.now()}`,
-    pincode: area.pincode || "",
-    areaName: area.areaName || fallback?.areaName || "Service Area",
-    city: area.city || fallback?.city || "Delhi",
-    state: area.state || fallback?.state || "Delhi",
-    deliveryCharge: Number(area.deliveryCharge ?? fallback?.deliveryCharge ?? 49),
+    id: String(area.id || fallback?.id || `area-${pincode || Date.now()}`),
+    pincode,
+    areaName: String(area.areaName || fallback?.areaName || "Service Area"),
+    city: String(area.city || fallback?.city || "Delhi"),
+    state: String(area.state || fallback?.state || "Delhi"),
+    deliveryCharge: Number(
+      area.deliveryCharge ?? fallback?.deliveryCharge ?? 49
+    ),
     freeDeliveryAbove: Number(
       area.freeDeliveryAbove ?? fallback?.freeDeliveryAbove ?? 499
     ),
-    minOrderValue: Number(area.minOrderValue ?? fallback?.minOrderValue ?? 149),
-    estimatedDelivery:
-      area.estimatedDelivery || fallback?.estimatedDelivery || "Next morning",
-    expressAvailable: area.expressAvailable ?? fallback?.expressAvailable ?? true,
+    minOrderValue: Number(
+      area.minOrderValue ?? fallback?.minOrderValue ?? 149
+    ),
+    estimatedDelivery: String(
+      area.estimatedDelivery || fallback?.estimatedDelivery || "Next morning"
+    ),
+    expressAvailable:
+      area.expressAvailable ?? fallback?.expressAvailable ?? true,
     isActive: area.isActive !== false,
-    createdAt: area.createdAt || new Date().toISOString(),
-    updatedAt: area.updatedAt,
+    createdAt: String(area.createdAt || fallback?.createdAt || now),
+    updatedAt: String(area.updatedAt || now),
   };
 };
 
-export function getDeliveryAreas() {
+export function getDeliveryAreas(): DeliveryArea[] {
   if (typeof window === "undefined") {
     return defaultDeliveryAreas;
   }
@@ -85,47 +99,61 @@ export function getDeliveryAreas() {
       DELIVERY_AREAS_STORAGE_KEY,
       JSON.stringify(defaultDeliveryAreas)
     );
+
     return defaultDeliveryAreas;
   }
 
   try {
     const parsedAreas = JSON.parse(savedAreas) as Partial<DeliveryArea>[];
 
-    if (Array.isArray(parsedAreas)) {
-      const normalizedAreas = parsedAreas
-        .filter((area) => area.pincode)
-        .map(normalizeDeliveryArea);
-
+    if (!Array.isArray(parsedAreas)) {
       localStorage.setItem(
         DELIVERY_AREAS_STORAGE_KEY,
-        JSON.stringify(normalizedAreas)
+        JSON.stringify(defaultDeliveryAreas)
       );
 
-      return normalizedAreas;
+      return defaultDeliveryAreas;
     }
+
+    const normalizedAreas = parsedAreas
+      .filter((area) => String(area.pincode || "").trim().length > 0)
+      .map(normalizeDeliveryArea);
 
     localStorage.setItem(
       DELIVERY_AREAS_STORAGE_KEY,
-      JSON.stringify(defaultDeliveryAreas)
+      JSON.stringify(normalizedAreas)
     );
-    return defaultDeliveryAreas;
+
+    return normalizedAreas;
   } catch {
     localStorage.setItem(
       DELIVERY_AREAS_STORAGE_KEY,
       JSON.stringify(defaultDeliveryAreas)
     );
+
     return defaultDeliveryAreas;
   }
 }
 
 export function saveDeliveryAreas(areas: DeliveryArea[]) {
+  if (typeof window === "undefined") return;
+
+  const normalizedAreas = areas.map((area) => ({
+    ...normalizeDeliveryArea(area),
+    updatedAt: getNow(),
+  }));
+
   localStorage.setItem(
     DELIVERY_AREAS_STORAGE_KEY,
-    JSON.stringify(areas.map(normalizeDeliveryArea))
+    JSON.stringify(normalizedAreas)
   );
 }
 
 export function resetDeliveryAreasToDefault() {
+  if (typeof window === "undefined") {
+    return defaultDeliveryAreas;
+  }
+
   localStorage.setItem(
     DELIVERY_AREAS_STORAGE_KEY,
     JSON.stringify(defaultDeliveryAreas)

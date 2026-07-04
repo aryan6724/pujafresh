@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
+import { addCustomerNotification } from "@/utils/customerNotificationStorage";
 import {
   CustomerSubscription,
   getAllSubscriptions,
@@ -57,6 +58,10 @@ const formatDateTime = (date?: string) => {
   });
 };
 
+const dispatchSubscriptionsUpdated = () => {
+  window.dispatchEvent(new Event("pujafresh-subscriptions-updated"));
+};
+
 const getStatusBadgeClass = (status: string) => {
   if (status === "Active") return "bg-green-50 text-green-700";
   if (status === "Pending Approval") return "bg-orange-50 text-orange-700";
@@ -85,6 +90,14 @@ export default function AdminSubscriptionsPage() {
 
     loadSubscriptions();
     setIsCheckingAuth(false);
+
+    window.addEventListener("storage", loadSubscriptions);
+    window.addEventListener("pujafresh-subscriptions-updated", loadSubscriptions);
+
+    return () => {
+      window.removeEventListener("storage", loadSubscriptions);
+      window.removeEventListener("pujafresh-subscriptions-updated", loadSubscriptions);
+    };
   }, [router]);
 
   const loadSubscriptions = () => {
@@ -139,13 +152,30 @@ export default function AdminSubscriptionsPage() {
     subscriptionId: string,
     status: SubscriptionStatus
   ) => {
+    const subscription = subscriptions.find((item) => item.id === subscriptionId);
+
     updateSubscriptionStatus(
       subscriptionId,
       status,
       "Admin",
       `Admin changed subscription status to ${status}.`
     );
+
+    dispatchSubscriptionsUpdated();
     loadSubscriptions();
+
+    if (subscription) {
+      addCustomerNotification({
+        customerEmail: subscription.customerEmail,
+        customerPhone: subscription.customerPhone,
+        type: "System",
+        priority: status === "Active" || status === "Cancelled" ? "High" : "Normal",
+        title: "Subscription status updated",
+        message: `Your subscription ${subscription.id} is now ${status}.`,
+        actionHref: "/subscriptions",
+      });
+    }
+
     toast.success(`Subscription marked as ${status}`);
   };
 
@@ -153,8 +183,25 @@ export default function AdminSubscriptionsPage() {
     subscriptionId: string,
     nextDeliveryDate: string
   ) => {
+    const subscription = subscriptions.find((item) => item.id === subscriptionId);
+
     updateSubscriptionNextDelivery(subscriptionId, nextDeliveryDate, "Admin");
+
+    dispatchSubscriptionsUpdated();
     loadSubscriptions();
+
+    if (subscription) {
+      addCustomerNotification({
+        customerEmail: subscription.customerEmail,
+        customerPhone: subscription.customerPhone,
+        type: "System",
+        priority: "Normal",
+        title: "Subscription delivery date updated",
+        message: `Next delivery for subscription ${subscription.id} is set to ${nextDeliveryDate}.`,
+        actionHref: "/subscriptions",
+      });
+    }
+
     toast.success("Next delivery date updated");
   };
 
@@ -163,10 +210,29 @@ export default function AdminSubscriptionsPage() {
 
     if (!confirmDelete) return;
 
+    const deletedSubscription = subscriptions.find(
+      (subscription) => subscription.id === subscriptionId
+    );
+
     saveAllSubscriptions(
       subscriptions.filter((subscription) => subscription.id !== subscriptionId)
     );
+
+    dispatchSubscriptionsUpdated();
     loadSubscriptions();
+
+    if (deletedSubscription) {
+      addCustomerNotification({
+        customerEmail: deletedSubscription.customerEmail,
+        customerPhone: deletedSubscription.customerPhone,
+        type: "System",
+        priority: "High",
+        title: "Subscription removed",
+        message: `Subscription ${deletedSubscription.id} has been removed by admin.`,
+        actionHref: "/subscriptions",
+      });
+    }
+
     toast.success("Subscription deleted");
   };
 

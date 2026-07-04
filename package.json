@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "prisma:generate": "prisma generate",
+    "prisma:studio": "prisma studio",
+    "prisma:push": "prisma db push"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -14,6 +17,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.20.0",
     "next": "16.2.9",
+    "next-auth": "^5.0.0-beta.31",
     "prisma": "^6.19.3",
     "qrcode.react": "^4.2.0",
     "react": "19.2.4",

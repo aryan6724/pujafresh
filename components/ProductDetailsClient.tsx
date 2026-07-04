@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   CheckCircle,
   ChevronRight,
@@ -65,42 +65,42 @@ const productIncludedMap: Record<string, string[]> = {
     "Agarbatti for fragrance",
     "Clean packing for morning delivery",
   ],
-  "fresh-genda-flowers": [
-    "Fresh orange and yellow genda flowers",
+  "fresh-marigold-flowers": [
+    "Fresh orange and yellow marigold flowers",
     "Suitable for daily mandir use",
     "Packed in clean transparent packaging",
     "Good for pooja, decoration and offerings",
     "Delivered fresh in the morning slot",
   ],
-  "kapoor-dhoop-combo": [
+  "fresh-rose-petals": [
+    "Fresh rose petals",
+    "Suitable for offerings and decoration",
+    "Clean packing",
+    "Delivered fresh in the morning slot",
+  ],
+  "agarbatti-pack": [
+    "Premium incense sticks",
+    "Useful for daily pooja and meditation",
+    "Clean packaging",
+    "Suitable for morning and evening aarti",
+  ],
+  "diya-set": [
+    "Traditional diya set",
+    "Useful for aarti and festivals",
+    "Clean protective packing",
+    "Suitable for home mandir use",
+  ],
+  "camphor-kapoor": [
     "Kapoor pieces for aarti",
-    "Dhoop sticks / cones for fragrance",
-    "Useful for daily pooja and evening aarti",
+    "Useful for daily pooja",
     "Packed safely to avoid damage",
-    "Affordable combo for regular use",
+    "Affordable pack for regular use",
   ],
-  "complete-navratri-kit": [
-    "Mata chunri",
-    "Kalash setup items",
-    "Nariyal and mauli",
-    "Roli, chawal and kapoor",
-    "Fresh flowers and rose petals",
-    "Agarbatti, diya and cotton batti",
-    "Complete festive pooja essentials",
-  ],
-  "small-ganesh-ji-murti": [
-    "Small Ganesh Ji murti",
-    "Safe protective packaging",
-    "Suitable for home mandir",
-    "Can be used for Ganesh Chaturthi and daily worship",
-    "Eco-friendly style product positioning",
-  ],
-  "premium-daily-pooja-pack": [
+  "premium-pooja-kit": [
     "Fresh flowers and rose petals",
     "Roli, chawal and kapoor",
     "Cotton batti and agarbatti",
-    "Brass-style pooja essentials presentation",
-    "Premium clean packing",
+    "Clean packing",
     "Best for daily home mandir use",
   ],
 };
@@ -112,31 +112,37 @@ const productHighlightsMap: Record<string, string[]> = {
     "Fresh morning delivery support",
     "Good for daily budget",
   ],
-  "fresh-genda-flowers": [
-    "Fresh genda flowers",
+  "fresh-marigold-flowers": [
+    "Fresh marigold flowers",
     "Ideal for daily pooja and decoration",
     "Packed cleanly",
     "Available for early morning delivery",
   ],
-  "kapoor-dhoop-combo": [
-    "Useful daily pooja combo",
-    "Kapoor and dhoop together",
+  "fresh-rose-petals": [
+    "Fresh rose petals",
+    "Ideal for offering and decoration",
+    "Clean packaging",
+    "Available for early morning delivery",
+  ],
+  "agarbatti-pack": [
+    "Useful daily pooja item",
+    "Peaceful fragrance",
     "Compact and affordable",
     "Easy to store at home",
   ],
-  "complete-navratri-kit": [
-    "Complete Navratri essentials",
-    "Festival-ready combo",
-    "Saves shopping time",
-    "Good for home pooja setup",
+  "diya-set": [
+    "Traditional diya set",
+    "Good for daily aarti",
+    "Useful for festivals",
+    "Clean protective packing",
   ],
-  "small-ganesh-ji-murti": [
-    "Small size for home mandir",
-    "Safe delivery packaging",
-    "Good for gifting and festivals",
-    "Simple devotional design",
+  "camphor-kapoor": [
+    "Useful daily pooja item",
+    "Kapoor for aarti",
+    "Compact and affordable",
+    "Easy to store at home",
   ],
-  "premium-daily-pooja-pack": [
+  "premium-pooja-kit": [
     "Premium daily pooja set",
     "More complete than basic pack",
     "Fresh flowers with pooja essentials",
@@ -180,15 +186,40 @@ const getReviewStorageKey = (productSlug: string) => {
   return `pujafresh-reviews-${productSlug}`;
 };
 
+const getSafeSlug = (product: Product) => {
+  if (product.slug && product.slug.trim().length > 0) {
+    return product.slug.trim();
+  }
+
+  return product.name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+};
+
+const getSafeImage = (product: Product) => {
+  if (product.image && product.image.trim().length > 0) {
+    return product.image;
+  }
+
+  return "/premium-pooja-pack.jpg";
+};
+
 export default function ProductDetailsClient({
   product,
   relatedProducts,
 }: ProductDetailsClientProps) {
+  const router = useRouter();
   const { user, isLoggedIn } = useAuth();
   const { addToCart } = useCart();
   const { isInWishlist, toggleWishlist } = useWishlist();
 
+  const safeSlug = getSafeSlug(product);
+  const safeImage = getSafeImage(product);
+
   const [quantity, setQuantity] = useState(1);
+  const [mainImage, setMainImage] = useState(safeImage);
   const [pincode, setPincode] = useState("");
   const [pincodeResult, setPincodeResult] = useState<
     "available" | "unavailable" | null
@@ -201,7 +232,11 @@ export default function ProductDetailsClient({
   const [hasPurchasedProduct, setHasPurchasedProduct] = useState(false);
 
   useEffect(() => {
-    const savedReviews = localStorage.getItem(getReviewStorageKey(product.slug));
+    setMainImage(safeImage);
+  }, [safeImage]);
+
+  useEffect(() => {
+    const savedReviews = localStorage.getItem(getReviewStorageKey(safeSlug));
 
     if (!savedReviews) {
       setCustomerReviews([]);
@@ -219,7 +254,7 @@ export default function ProductDetailsClient({
     } catch {
       setCustomerReviews([]);
     }
-  }, [product.slug]);
+  }, [safeSlug]);
 
   useEffect(() => {
     if (!isLoggedIn || !user) {
@@ -243,15 +278,18 @@ export default function ProductDetailsClient({
       }
 
       const purchased = orders.some((order) => {
-        const belongsToCurrentUser =
-          order.customerEmail === user.email ||
-          order.customer?.email === user.email;
+        const userEmail = String(user.email || "").trim().toLowerCase();
+        const orderEmail = String(order.customerEmail || order.customer?.email || "")
+          .trim()
+          .toLowerCase();
+
+        const belongsToCurrentUser = Boolean(userEmail && orderEmail === userEmail);
 
         const isValidOrder =
           order.status !== "Cancelled" && order.status !== "Archived";
 
         const hasProduct = order.items?.some((item) => {
-          return item.id === product.id || item.slug === product.slug;
+          return item.id === product.id || item.slug === safeSlug;
         });
 
         return belongsToCurrentUser && isValidOrder && hasProduct;
@@ -261,7 +299,7 @@ export default function ProductDetailsClient({
     } catch {
       setHasPurchasedProduct(false);
     }
-  }, [isLoggedIn, user, product.id, product.slug]);
+  }, [isLoggedIn, user, product.id, safeSlug]);
 
   const approvedCustomerReviews = useMemo(() => {
     return customerReviews.filter(
@@ -274,8 +312,7 @@ export default function ProductDetailsClient({
 
     return (
       customerReviews.find(
-        (review) =>
-          review.email === user.email && review.status === "Pending"
+        (review) => review.email === user.email && review.status === "Pending"
       ) || null
     );
   }, [customerReviews, user]);
@@ -285,7 +322,7 @@ export default function ProductDetailsClient({
   }, [approvedCustomerReviews]);
 
   const averageRating = useMemo(() => {
-    if (allReviews.length === 0) return product.rating;
+    if (allReviews.length === 0) return Number(product.rating || 4.8);
 
     const totalRating = allReviews.reduce(
       (total, review) => total + review.rating,
@@ -295,7 +332,7 @@ export default function ProductDetailsClient({
     return Number((totalRating / allReviews.length).toFixed(1));
   }, [allReviews, product.rating]);
 
-  const totalRatings = product.reviews + approvedCustomerReviews.length;
+  const totalRatings = Number(product.reviews || 0) + approvedCustomerReviews.length;
 
   const alreadyReviewed = useMemo(() => {
     if (!user) return false;
@@ -326,12 +363,13 @@ export default function ProductDetailsClient({
   const isUnavailable = isOutOfStock || isComingSoon;
   const isStockLimitReached = !isUnavailable && quantity >= availableStock;
 
-  const discount = Math.round(
-    ((product.mrp - product.price) / product.mrp) * 100
-  );
+  const discount =
+    product.mrp && product.mrp > product.price
+      ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
+      : 0;
 
   const includedItems =
-    productIncludedMap[product.slug] || [
+    productIncludedMap[safeSlug] || [
       "Fresh selected product items",
       "Clean packaging",
       "Morning delivery support",
@@ -339,7 +377,7 @@ export default function ProductDetailsClient({
     ];
 
   const highlights =
-    productHighlightsMap[product.slug] || [
+    productHighlightsMap[safeSlug] || [
       "Fresh product",
       "Clean packaging",
       "Affordable rate",
@@ -401,7 +439,11 @@ export default function ProductDetailsClient({
     }
 
     for (let i = 0; i < quantity; i++) {
-      addToCart(product);
+      addToCart({
+        ...product,
+        slug: safeSlug,
+        image: mainImage,
+      });
     }
 
     toast.success(`${quantity} × ${product.name} added to cart`);
@@ -419,14 +461,23 @@ export default function ProductDetailsClient({
     }
 
     for (let i = 0; i < quantity; i++) {
-      addToCart(product);
+      addToCart({
+        ...product,
+        slug: safeSlug,
+        image: mainImage,
+      });
     }
 
-    toast.success(`${quantity} × ${product.name} added. Go to cart to checkout.`);
+    toast.success(`${quantity} × ${product.name} added to cart`);
+    router.push("/cart");
   };
 
   const handleWishlist = () => {
-    toggleWishlist(product);
+    toggleWishlist({
+      ...product,
+      slug: safeSlug,
+      image: mainImage,
+    });
 
     if (isWishlisted) {
       toast.success(`${product.name} removed from wishlist`);
@@ -499,7 +550,7 @@ export default function ProductDetailsClient({
 
     setCustomerReviews(updatedReviews);
     localStorage.setItem(
-      getReviewStorageKey(product.slug),
+      getReviewStorageKey(safeSlug),
       JSON.stringify(updatedReviews)
     );
 
@@ -520,14 +571,14 @@ export default function ProductDetailsClient({
             Home
           </Link>
           <ChevronRight size={16} />
-          <span>{product.category}</span>
+          <span>{product.category || "Pooja Essentials"}</span>
           <ChevronRight size={16} />
           <span className="font-semibold text-gray-900">{product.name}</span>
         </div>
 
         <div className="grid gap-6 rounded-xl bg-white p-5 shadow-sm lg:grid-cols-[460px_1fr]">
           <div>
-            <div className="relative h-[420px] overflow-hidden rounded-xl bg-[#fff7ed]">
+            <div className="relative flex h-[420px] items-center justify-center overflow-hidden rounded-xl bg-[#fff7ed] p-4">
               {(isUnavailable || isLimitedStock) && (
                 <div
                   className={`absolute left-4 top-4 z-10 rounded px-3 py-1 text-xs font-bold uppercase text-white ${
@@ -544,14 +595,15 @@ export default function ProductDetailsClient({
                 </div>
               )}
 
-              <Image
-                src={product.image}
+              <img
+                src={mainImage}
                 alt={product.name}
-                fill
-                className={`object-cover ${
+                className={`max-h-full max-w-full object-contain ${
                   isUnavailable ? "opacity-60 grayscale" : ""
                 }`}
-                priority
+                onError={(event) => {
+                  event.currentTarget.src = "/premium-pooja-pack.jpg";
+                }}
               />
             </div>
 
@@ -588,14 +640,16 @@ export default function ProductDetailsClient({
 
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-[#f97316]">
-              {product.badge}
+              {product.badge || "Fresh"}
             </p>
 
             <h1 className="mt-2 text-3xl font-bold text-gray-900">
               {product.name}
             </h1>
 
-            <p className="mt-2 text-gray-500">{product.category}</p>
+            <p className="mt-2 text-gray-500">
+              {product.category || "Pooja Essentials"}
+            </p>
 
             <div className="mt-3 flex items-center gap-3">
               <span className="flex items-center gap-1 rounded bg-[#15803d] px-2 py-1 text-sm font-bold text-white">
@@ -613,13 +667,17 @@ export default function ProductDetailsClient({
                 ₹{product.price}
               </span>
 
-              <span className="text-lg text-gray-400 line-through">
-                ₹{product.mrp}
-              </span>
+              {product.mrp && product.mrp > product.price && (
+                <span className="text-lg text-gray-400 line-through">
+                  ₹{product.mrp}
+                </span>
+              )}
 
-              <span className="text-lg font-bold text-[#15803d]">
-                {discount}% off
-              </span>
+              {discount > 0 && (
+                <span className="text-lg font-bold text-[#15803d]">
+                  {discount}% off
+                </span>
+              )}
             </div>
 
             <p className="mt-2 text-sm font-semibold text-[#15803d]">
@@ -628,7 +686,7 @@ export default function ProductDetailsClient({
 
             <div className="mt-4 rounded-lg bg-[#fff7ed] p-4">
               <p className={`text-sm font-bold ${getStockColor()}`}>
-                {isOutOfStock ? "Out of Stock" : product.stock}
+                {isOutOfStock ? "Out of Stock" : product.stock || "In Stock"}
               </p>
 
               {!isComingSoon && (
@@ -776,11 +834,11 @@ export default function ProductDetailsClient({
               <div className="mt-3 space-y-2 text-sm text-gray-700">
                 <p>
                   <span className="font-semibold">Delivery:</span>{" "}
-                  {product.delivery}
+                  {product.delivery || "Early morning delivery"}
                 </p>
                 <p>
                   <span className="font-semibold">Available:</span>{" "}
-                  {isOutOfStock ? "Out of Stock" : product.stock}
+                  {isOutOfStock ? "Out of Stock" : product.stock || "In Stock"}
                 </p>
                 {!isComingSoon && (
                   <p>
@@ -891,7 +949,10 @@ export default function ProductDetailsClient({
                 <div className="mt-4">
                   <div className="mb-4 rounded bg-green-50 p-3 text-sm text-green-700">
                     <p className="font-bold">Verified Purchase</p>
-                    <p>You can review this product because it exists in your order history.</p>
+                    <p>
+                      You can review this product because it exists in your order
+                      history.
+                    </p>
                   </div>
 
                   <label className="text-sm font-bold text-gray-700">
@@ -1007,23 +1068,25 @@ export default function ProductDetailsClient({
           </div>
         </div>
 
-        <div className="mt-8">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">
-              Related Products
-            </h2>
+        {relatedProducts.length > 0 && (
+          <div className="mt-8">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-gray-900">
+                Related Products
+              </h2>
 
-            <Link href="/" className="text-sm font-bold text-[#7a1e13]">
-              View All
-            </Link>
-          </div>
+              <Link href="/" className="text-sm font-bold text-[#7a1e13]">
+                View All
+              </Link>
+            </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {relatedProducts.map((item) => (
-              <ProductCard key={item.id} product={item} />
-            ))}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {relatedProducts.map((item) => (
+                <ProductCard key={`${item.slug}-${item.id}`} product={item} />
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </section>
     </main>
   );

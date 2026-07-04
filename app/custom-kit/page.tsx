@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
@@ -168,6 +169,7 @@ const kitPresets: KitPreset[] = [
 ];
 
 export default function CustomKitPage() {
+  const router = useRouter();
   const { addToCart } = useCart();
   const [selectedItems, setSelectedItems] = useState<Record<number, number>>({});
   const [activePresetId, setActivePresetId] = useState("");
@@ -223,12 +225,13 @@ export default function CustomKitPage() {
       return;
     }
 
+    const kitTimestamp = Date.now();
     const kitName = `Custom Pooja Kit (${selectedKitItems.length} items)`;
 
     const customKitProduct = {
-      id: Date.now(),
+      id: kitTimestamp,
       name: kitName,
-      slug: `custom-pooja-kit-${Date.now()}`,
+      slug: `custom-pooja-kit-${kitTimestamp}`,
       category: "Custom Kit",
       price: kitTotal,
       mrp: kitTotal,
@@ -248,24 +251,30 @@ export default function CustomKitPage() {
 
     addToCart(customKitProduct);
 
-    const savedKits = localStorage.getItem("pujafresh-custom-kits");
-    const previousKits = savedKits ? JSON.parse(savedKits) : [];
+    try {
+      const savedKits = localStorage.getItem("pujafresh-custom-kits");
+      const previousKits = savedKits ? JSON.parse(savedKits) : [];
 
-    localStorage.setItem(
-      "pujafresh-custom-kits",
-      JSON.stringify([
-        {
-          id: customKitProduct.id,
-          name: kitName,
-          items: selectedKitItems,
-          total: kitTotal,
-          createdAt: new Date().toISOString(),
-        },
-        ...previousKits,
-      ])
-    );
+      localStorage.setItem(
+        "pujafresh-custom-kits",
+        JSON.stringify([
+          {
+            id: customKitProduct.id,
+            name: kitName,
+            slug: customKitProduct.slug,
+            items: selectedKitItems,
+            total: kitTotal,
+            createdAt: new Date().toISOString(),
+          },
+          ...(Array.isArray(previousKits) ? previousKits : []),
+        ])
+      );
+    } catch {
+      // Cart item is already added, so ignore old custom-kit storage issues.
+    }
 
     toast.success("Custom kit added to cart");
+    router.push("/cart");
   };
 
   return (

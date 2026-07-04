@@ -45,7 +45,25 @@ const emitNotificationUpdate = () => {
   window.dispatchEvent(new Event("pujafresh-notifications-updated"));
 };
 
-export function getAllCustomerNotifications() {
+const normalizeNotification = (
+  notification: Partial<CustomerNotification>
+): CustomerNotification => {
+  return {
+    id: String(notification.id || createNotificationId()),
+    customerEmail: normalizeEmail(notification.customerEmail),
+    customerPhone: normalizePhone(notification.customerPhone),
+    orderId: notification.orderId ? String(notification.orderId) : undefined,
+    type: notification.type || "System",
+    priority: notification.priority || "Normal",
+    title: String(notification.title || "PujaFresh update"),
+    message: String(notification.message || ""),
+    actionHref: notification.actionHref,
+    isRead: Boolean(notification.isRead),
+    createdAt: notification.createdAt || new Date().toISOString(),
+  };
+};
+
+export function getAllCustomerNotifications(): CustomerNotification[] {
   if (typeof window === "undefined") return [];
 
   const savedNotifications = localStorage.getItem(
@@ -57,13 +75,16 @@ export function getAllCustomerNotifications() {
   try {
     const parsedNotifications = JSON.parse(
       savedNotifications
-    ) as CustomerNotification[];
+    ) as Partial<CustomerNotification>[];
 
-    if (Array.isArray(parsedNotifications)) {
-      return parsedNotifications;
-    }
+    if (!Array.isArray(parsedNotifications)) return [];
 
-    return [];
+    return parsedNotifications
+      .map(normalizeNotification)
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
   } catch {
     return [];
   }
@@ -72,9 +93,13 @@ export function getAllCustomerNotifications() {
 export function saveAllCustomerNotifications(
   notifications: CustomerNotification[]
 ) {
+  if (typeof window === "undefined") return;
+
+  const normalizedNotifications = notifications.map(normalizeNotification);
+
   localStorage.setItem(
     CUSTOMER_NOTIFICATIONS_STORAGE_KEY,
-    JSON.stringify(notifications)
+    JSON.stringify(normalizedNotifications)
   );
 
   emitNotificationUpdate();
@@ -86,6 +111,8 @@ export function getCustomerNotifications(
 ) {
   const email = normalizeEmail(customerEmail);
   const phone = normalizePhone(customerPhone);
+
+  if (!email && !phone) return [];
 
   return getAllCustomerNotifications()
     .filter((notification) => {
@@ -103,6 +130,15 @@ export function getCustomerNotifications(
     );
 }
 
+export function getUnreadCustomerNotificationCount(
+  customerEmail?: string,
+  customerPhone?: string
+) {
+  return getCustomerNotifications(customerEmail, customerPhone).filter(
+    (notification) => !notification.isRead
+  ).length;
+}
+
 export function addCustomerNotification(
   notification: Omit<CustomerNotification, "id" | "isRead" | "createdAt"> & {
     createdAt?: string;
@@ -118,17 +154,24 @@ export function addCustomerNotification(
 
   const savedNotifications = getAllCustomerNotifications();
 
-  const newNotification: CustomerNotification = {
+  const newNotification: CustomerNotification = normalizeNotification({
     id: createNotificationId(),
     ...notification,
-    customerEmail: customerEmail || notification.customerEmail,
-    customerPhone: customerPhone || notification.customerPhone,
+    customerEmail,
+    customerPhone,
     isRead: notification.isRead ?? false,
     createdAt: notification.createdAt || new Date().toISOString(),
-  };
+  });
 
   const isDuplicate = savedNotifications.some((savedNotification) => {
+    const sameCustomer =
+      (newNotification.customerEmail &&
+        savedNotification.customerEmail === newNotification.customerEmail) ||
+      (newNotification.customerPhone &&
+        savedNotification.customerPhone === newNotification.customerPhone);
+
     return (
+      sameCustomer &&
       savedNotification.orderId === newNotification.orderId &&
       savedNotification.type === newNotification.type &&
       savedNotification.title === newNotification.title &&
@@ -163,11 +206,8 @@ const getOrderId = (order: any) => {
 };
 
 const getOrderActionHref = (order: any) => {
-  return `/track-order`;
-};
-
-const getOrderTotal = (order: any) => {
-  return Number(order?.total || 0);
+  const orderId = encodeURIComponent(getOrderId(order));
+  return orderId ? `/track-order?orderId=${orderId}` : "/track-order";
 };
 
 const orderStatusMessages: Record<
@@ -220,7 +260,7 @@ const orderStatusMessages: Record<
     priority: "High",
     title: "Order delivered",
     message:
-      "Your order has been delivered successfully. You can now share feedback.",
+      "Your order has been delivered successfully. You can now share feedback or request support.",
   },
   "Delivery Failed": {
     type: "Delivery",
@@ -296,7 +336,7 @@ export function addOrderStatusNotification(
     type: notificationMeta.type,
     priority: notificationMeta.priority,
     title: notificationMeta.title,
-    message: `${notificationMeta.message} Order ID: ${orderId}.`,
+    message: `${notificationMeta.message} Order ID: ${orderId}. Updated by ${updatedBy}.`,
     actionHref: getOrderActionHref(order),
   });
 }
@@ -377,6 +417,38 @@ export function addSupportReplyNotification(params: {
   });
 }
 
+export function addSupportStatusNotification(params: {
+  customerEmail?: string;
+  customerPhone?: string;
+  ticketId: string;
+  status: string;
+}) {
+  return addCustomerNotification({
+    customerEmail: params.customerEmail,
+    customerPhone: params.customerPhone,
+    type: "Support",
+    priority: params.status === "Resolved" || params.status === "Closed" ? "Normal" : "High",
+    title: "Support ticket updated",
+    message: `Your support ticket ${params.ticketId} is now ${params.status}.`,
+    actionHref: "/support",
+  });
+}
+
+export function addReturnRefundStatusNotification(order: any, status: string) {
+  const orderId = getOrderId(order);
+
+  return addCustomerNotification({
+    customerEmail: getOrderCustomerEmail(order),
+    customerPhone: getOrderCustomerPhone(order),
+    orderId,
+    type: "Refund",
+    priority: "High",
+    title: "Return/refund request updated",
+    message: `Your return/refund request for order ${orderId} is now ${status}.`,
+    actionHref: "/return-refund",
+  });
+}
+
 export function markCustomerNotificationAsRead(notificationId: string) {
   const updatedNotifications = getAllCustomerNotifications().map((notification) =>
     notification.id === notificationId
@@ -396,6 +468,8 @@ export function markAllCustomerNotificationsAsRead(
 ) {
   const email = normalizeEmail(customerEmail);
   const phone = normalizePhone(customerPhone);
+
+  if (!email && !phone) return;
 
   const updatedNotifications = getAllCustomerNotifications().map(
     (notification) => {
@@ -432,6 +506,8 @@ export function clearReadCustomerNotifications(
 ) {
   const email = normalizeEmail(customerEmail);
   const phone = normalizePhone(customerPhone);
+
+  if (!email && !phone) return;
 
   const updatedNotifications = getAllCustomerNotifications().filter(
     (notification) => {

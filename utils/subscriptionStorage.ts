@@ -59,20 +59,18 @@ export type NewSubscriptionInput = Omit<
 
 export const SUBSCRIPTIONS_STORAGE_KEY = "pujafresh-subscriptions";
 
-const normalizeEmail = (email?: string) => {
-  return email?.trim().toLowerCase() || "";
-};
+const normalizeEmail = (email?: string) => email?.trim().toLowerCase() || "";
+const normalizePhone = (phone?: string) => phone?.replace(/\D/g, "") || "";
 
-const normalizePhone = (phone?: string) => {
-  return phone?.replace(/\D/g, "") || "";
+const emitSubscriptionUpdate = () => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("pujafresh-subscriptions-updated"));
 };
 
 const safeParseSubscriptions = (value: string | null): CustomerSubscription[] => {
   if (!value) return [];
-
   try {
     const parsedValue = JSON.parse(value);
-
     return Array.isArray(parsedValue) ? (parsedValue as CustomerSubscription[]) : [];
   } catch {
     return [];
@@ -87,7 +85,6 @@ export const calculateSubscriptionTotal = (items: SubscriptionItem[]) => {
   return items.reduce((sum, item) => {
     const price = Number(item.price || 0);
     const quantity = Number(item.quantity || 0);
-
     return sum + price * quantity;
   }, 0);
 };
@@ -96,7 +93,7 @@ export const calculateNextDeliveryDate = (
   startDate: string,
   frequency: SubscriptionFrequency
 ) => {
-  const baseDate = startDate ? new Date(startDate) : new Date();
+  const baseDate = startDate ? new Date(`${startDate}T00:00:00`) : new Date();
 
   if (Number.isNaN(baseDate.getTime())) {
     return new Date().toISOString().slice(0, 10);
@@ -104,17 +101,48 @@ export const calculateNextDeliveryDate = (
 
   const nextDate = new Date(baseDate);
 
-  if (frequency === "Daily") {
-    nextDate.setDate(nextDate.getDate() + 1);
-  } else if (frequency === "Weekly") {
-    nextDate.setDate(nextDate.getDate() + 7);
-  } else if (frequency === "Monthly") {
-    nextDate.setMonth(nextDate.getMonth() + 1);
-  } else {
-    nextDate.setDate(nextDate.getDate() + 7);
-  }
+  if (frequency === "Daily") nextDate.setDate(nextDate.getDate() + 1);
+  else if (frequency === "Weekly") nextDate.setDate(nextDate.getDate() + 7);
+  else if (frequency === "Monthly") nextDate.setMonth(nextDate.getMonth() + 1);
+  else nextDate.setDate(nextDate.getDate() + 7);
 
   return nextDate.toISOString().slice(0, 10);
+};
+
+const normalizeSubscription = (
+  subscription: Partial<CustomerSubscription>
+): CustomerSubscription => {
+  const now = new Date().toISOString();
+  const status = subscription.status || "Pending Approval";
+
+  return {
+    id: String(subscription.id || createSubscriptionId()),
+    customerName: String(subscription.customerName || "Customer"),
+    customerEmail: normalizeEmail(subscription.customerEmail),
+    customerPhone: normalizePhone(subscription.customerPhone),
+    items: Array.isArray(subscription.items) ? subscription.items : [],
+    frequency: subscription.frequency || "Weekly",
+    customFrequencyNote: subscription.customFrequencyNote || "",
+    preferredDeliverySlot: subscription.preferredDeliverySlot || "5:00 AM - 7:00 AM",
+    startDate: subscription.startDate || new Date().toISOString().slice(0, 10),
+    endDate: subscription.endDate || "",
+    nextDeliveryDate:
+      subscription.nextDeliveryDate ||
+      calculateNextDeliveryDate(
+        subscription.startDate || new Date().toISOString().slice(0, 10),
+        subscription.frequency || "Weekly"
+      ),
+    addressSummary: subscription.addressSummary || "",
+    pincode: subscription.pincode || "",
+    paymentMode: subscription.paymentMode || "Cash on Delivery",
+    notes: subscription.notes || "",
+    status,
+    totalPerDelivery:
+      subscription.totalPerDelivery ?? calculateSubscriptionTotal(subscription.items || []),
+    createdAt: subscription.createdAt || now,
+    updatedAt: subscription.updatedAt || now,
+    history: Array.isArray(subscription.history) ? subscription.history : [],
+  };
 };
 
 export function getAllSubscriptions(): CustomerSubscription[] {
@@ -122,7 +150,13 @@ export function getAllSubscriptions(): CustomerSubscription[] {
 
   const savedSubscriptions = window.localStorage.getItem(SUBSCRIPTIONS_STORAGE_KEY);
 
-  return safeParseSubscriptions(savedSubscriptions);
+  return safeParseSubscriptions(savedSubscriptions)
+    .map(normalizeSubscription)
+    .sort(
+      (a, b) =>
+        new Date(b.updatedAt || b.createdAt).getTime() -
+        new Date(a.updatedAt || a.createdAt).getTime()
+    );
 }
 
 export function saveAllSubscriptions(subscriptions: CustomerSubscription[]) {
@@ -130,8 +164,10 @@ export function saveAllSubscriptions(subscriptions: CustomerSubscription[]) {
 
   window.localStorage.setItem(
     SUBSCRIPTIONS_STORAGE_KEY,
-    JSON.stringify(subscriptions)
+    JSON.stringify(subscriptions.map(normalizeSubscription))
   );
+
+  emitSubscriptionUpdate();
 }
 
 export function getCustomerSubscriptions(
@@ -164,7 +200,7 @@ export function addSubscription(
 ): CustomerSubscription {
   const now = new Date().toISOString();
 
-  const newSubscription: CustomerSubscription = {
+  const newSubscription: CustomerSubscription = normalizeSubscription({
     ...subscription,
     id: createSubscriptionId(),
     customerEmail: normalizeEmail(subscription.customerEmail),
@@ -180,10 +216,9 @@ export function addSubscription(
         updatedBy: "Customer",
       },
     ],
-  };
+  });
 
   const previousSubscriptions = getAllSubscriptions();
-
   saveAllSubscriptions([newSubscription, ...previousSubscriptions]);
 
   return newSubscription;
@@ -196,7 +231,6 @@ export function updateSubscriptionStatus(
   message?: string
 ): CustomerSubscription | null {
   const now = new Date().toISOString();
-
   let updatedSubscription: CustomerSubscription | null = null;
 
   const updatedSubscriptions = getAllSubscriptions().map((subscription) => {
@@ -231,7 +265,6 @@ export function updateSubscriptionNextDelivery(
   updatedBy = "Admin"
 ): CustomerSubscription | null {
   const now = new Date().toISOString();
-
   let updatedSubscription: CustomerSubscription | null = null;
 
   const updatedSubscriptions = getAllSubscriptions().map((subscription) => {
@@ -256,7 +289,6 @@ export function updateSubscriptionNextDelivery(
   });
 
   saveAllSubscriptions(updatedSubscriptions);
-
   return updatedSubscription;
 }
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Heart, Star } from "lucide-react";
 import toast from "react-hot-toast";
 import { Product } from "@/types";
@@ -28,15 +29,35 @@ const getReviewStorageKey = (productSlug: string) => {
   return `pujafresh-reviews-${productSlug}`;
 };
 
+const getSafeProductSlug = (product: Product) => {
+  if (product.slug && product.slug.trim().length > 0) {
+    return product.slug.trim();
+  }
+
+  return product.name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+};
+
+const isUnavailableStock = (stock?: string) => {
+  return stock === "Out of Stock" || stock === "Coming Soon";
+};
+
 export default function ProductCard({ product }: ProductCardProps) {
+  const router = useRouter();
   const { addToCart } = useCart();
   const { isInWishlist, toggleWishlist } = useWishlist();
 
   const [customerReviews, setCustomerReviews] = useState<ProductReview[]>([]);
 
+  const productSlug = getSafeProductSlug(product);
+  const productUrl = `/product/${encodeURIComponent(productSlug)}`;
+
   useEffect(() => {
     const loadProductReviews = () => {
-      const savedReviews = localStorage.getItem(getReviewStorageKey(product.slug));
+      const savedReviews = localStorage.getItem(getReviewStorageKey(productSlug));
 
       if (!savedReviews) {
         setCustomerReviews([]);
@@ -63,14 +84,17 @@ export default function ProductCard({ product }: ProductCardProps) {
     return () => {
       window.removeEventListener("focus", loadProductReviews);
     };
-  }, [product.slug]);
+  }, [productSlug]);
 
   const dynamicRating = useMemo(() => {
     if (customerReviews.length === 0) {
-      return product.rating;
+      return Number(product.rating || 4.8);
     }
 
-    const existingRatingTotal = product.rating * product.reviews;
+    const existingReviews = Number(product.reviews || 0);
+    const existingRating = Number(product.rating || 4.8);
+    const existingRatingTotal = existingRating * existingReviews;
+
     const customerRatingTotal = customerReviews.reduce(
       (total, review) => total + review.rating,
       0
@@ -78,20 +102,18 @@ export default function ProductCard({ product }: ProductCardProps) {
 
     const finalRating =
       (existingRatingTotal + customerRatingTotal) /
-      (product.reviews + customerReviews.length);
+      (existingReviews + customerReviews.length);
 
     return Number(finalRating.toFixed(1));
   }, [customerReviews, product.rating, product.reviews]);
 
-  const dynamicReviewCount = product.reviews + customerReviews.length;
+  const dynamicReviewCount =
+    Number(product.reviews || 0) + customerReviews.length;
 
   const isWishlisted = isInWishlist(product.id);
 
   const availableStock = Number(
-    product.stockQuantity ??
-      (product.stock === "Out of Stock" || product.stock === "Coming Soon"
-        ? 0
-        : 999)
+    product.stockQuantity ?? (isUnavailableStock(product.stock) ? 0 : 999)
   );
 
   const isOutOfStock = product.stock === "Out of Stock" || availableStock <= 0;
@@ -101,9 +123,10 @@ export default function ProductCard({ product }: ProductCardProps) {
   const isLimitedStock = product.stock === "Limited Stock" || isLowStock;
   const isUnavailable = isOutOfStock || isComingSoon;
 
-  const discount = Math.round(
-    ((product.mrp - product.price) / product.mrp) * 100
-  );
+  const discount =
+    product.mrp && product.mrp > product.price
+      ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
+      : 0;
 
   const getStockColor = () => {
     if (isOutOfStock) return "text-red-600";
@@ -115,7 +138,7 @@ export default function ProductCard({ product }: ProductCardProps) {
   const getStockLabel = () => {
     if (isOutOfStock) return "Out of Stock";
     if (isComingSoon) return "Coming Soon";
-    return product.stock;
+    return product.stock || "In Stock";
   };
 
   const handleAddToCart = () => {
@@ -129,8 +152,10 @@ export default function ProductCard({ product }: ProductCardProps) {
       return;
     }
 
-    addToCart(product);
-    toast.success(`${product.name} added to cart`);
+    addToCart({
+      ...product,
+      slug: productSlug,
+    });
   };
 
   const handleBuyNow = () => {
@@ -144,15 +169,24 @@ export default function ProductCard({ product }: ProductCardProps) {
       return;
     }
 
-    addToCart(product);
-    toast.success(`${product.name} added. Go to cart to checkout.`);
+    addToCart({
+      ...product,
+      slug: productSlug,
+    });
+
+    toast.success("Added to cart. Opening cart...");
+    router.push("/cart");
   };
 
   return (
     <article className="group relative rounded bg-white p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
       <button
+        type="button"
         onClick={() => {
-          toggleWishlist(product);
+          toggleWishlist({
+            ...product,
+            slug: productSlug,
+          });
 
           if (isWishlisted) {
             toast.success(`${product.name} removed from wishlist`);
@@ -163,6 +197,7 @@ export default function ProductCard({ product }: ProductCardProps) {
         className={`absolute right-3 top-3 z-10 rounded-full bg-white p-2 shadow-sm transition ${
           isWishlisted ? "text-red-500" : "text-gray-500 hover:text-red-500"
         }`}
+        aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
       >
         <Heart size={18} fill={isWishlisted ? "currentColor" : "none"} />
       </button>
@@ -180,15 +215,15 @@ export default function ProductCard({ product }: ProductCardProps) {
       )}
 
       <Link
-        href={`/product/${product.slug}`}
+        href={productUrl}
         className="relative block h-48 w-full overflow-hidden rounded-lg bg-[#fff7ed]"
       >
         <Image
-          src={product.image}
+          src={product.image || "/premium-pooja-pack.jpg"}
           alt={product.name}
           fill
           sizes="(max-width: 768px) 100vw, 25vw"
-          className={`object-cover transition duration-300 group-hover:scale-105 ${
+          className={`object-contain p-2 transition duration-300 group-hover:scale-105 ${
             isUnavailable ? "opacity-60 grayscale" : ""
           }`}
         />
@@ -196,16 +231,18 @@ export default function ProductCard({ product }: ProductCardProps) {
 
       <div className="mt-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-[#f97316]">
-          {product.badge}
+          {product.badge || "Fresh"}
         </p>
 
-        <Link href={`/product/${product.slug}`}>
+        <Link href={productUrl}>
           <h3 className="mt-1 line-clamp-2 min-h-12 text-base font-semibold text-gray-900 hover:text-[#7a1e13]">
             {product.name}
           </h3>
         </Link>
 
-        <p className="mt-1 text-sm text-gray-500">{product.category}</p>
+        <p className="mt-1 text-sm text-gray-500">
+          {product.category || "Pooja Essentials"}
+        </p>
 
         <div className="mt-2 flex items-center gap-2">
           <span className="flex items-center gap-1 rounded bg-[#15803d] px-2 py-0.5 text-xs font-bold text-white">
@@ -230,17 +267,21 @@ export default function ProductCard({ product }: ProductCardProps) {
             ₹{product.price}
           </span>
 
-          <span className="text-sm text-gray-400 line-through">
-            ₹{product.mrp}
-          </span>
+          {product.mrp && product.mrp > product.price && (
+            <span className="text-sm text-gray-400 line-through">
+              ₹{product.mrp}
+            </span>
+          )}
 
-          <span className="text-sm font-semibold text-[#15803d]">
-            {discount}% off
-          </span>
+          {discount > 0 && (
+            <span className="text-sm font-semibold text-[#15803d]">
+              {discount}% off
+            </span>
+          )}
         </div>
 
         <p className="mt-2 text-sm font-medium text-gray-600">
-          {product.delivery}
+          {product.delivery || "Early morning delivery"}
         </p>
 
         <p className={`mt-1 text-sm font-bold ${getStockColor()}`}>
@@ -275,6 +316,7 @@ export default function ProductCard({ product }: ProductCardProps) {
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button
+            type="button"
             onClick={handleAddToCart}
             disabled={isUnavailable}
             className={`rounded px-3 py-2 text-sm font-bold text-white transition ${
@@ -291,6 +333,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           </button>
 
           <button
+            type="button"
             onClick={handleBuyNow}
             disabled={isUnavailable}
             className={`rounded px-3 py-2 text-sm font-bold text-white transition ${
